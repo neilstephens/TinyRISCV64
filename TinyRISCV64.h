@@ -37,6 +37,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <fstream>
@@ -56,10 +57,23 @@ using i64 = int64_t;
 
 class VM
 {
+private:
+	u64 pc;                  // Program counter
+	std::vector<u8> program; // Program memory
+	std::array<u64,32> x;    // Registers x0-x31
+	std::vector<u8> stack;   // Stack memory
+	std::span<u8> memory;    // Data memory
+	bool halted;             // Program exited
+
+	//virtual addressing:
+	//  0 to memory_size-1 : data memory
+	//  memory_size to memory_size+stack_size-1 : stack memory
+
 public:
-	VM(): x{}, pc(0), memory(nullptr), memory_size(0), program{}, halted(false)
+	VM(const size_t stack_size):
+		stack(stack_size)
 	{
-		for (int i = 0; i < 32; i++) x[i] = 0;
+		for(auto& xn : x) xn=0;
 	}
 
 	// Set register value (x0-x31, x0 is always 0)
@@ -79,11 +93,9 @@ public:
 	}
 
 	// Set memory for data access
-	void set_memory(void* mem, size_t size)
+	void set_memory(u8* mem, size_t size)
 	{
-		memory = static_cast<u8*>(mem);
-		memory_size = size;
-		x[2] = size; // sp points to end of memory
+		memory = std::span(mem,size);
 	}
 
 	// Load program from file
@@ -115,16 +127,17 @@ public:
 	}
 
 	// Execute program
-	void execute_program(size_t max_instructions = 100000)
+	void execute_program(u64 entry_point = 0, size_t max_instructions = 100000)
 	{
-		pc = 0;
+		pc = entry_point;
 		halted = false;
 		size_t count = 0;
 
-		if(!memory)
+		if(memory.empty())
 			throw std::invalid_argument("No memory context set for execution");
 
-		x[2] = memory_size; // sp points to end of memory
+		//x2 - stack pointer (sp)
+		x[2] = memory.size()+stack.size();
 
 		while (!halted && pc+3 < program.size())
 		{
@@ -138,21 +151,12 @@ public:
 	}
 
 private:
-	u64 x[32];               // Registers x0-x31
-	u64 pc;                  // Program counter
-	u8* memory;              // Data memory
-	size_t memory_size;      // Memory size
-	std::vector<u8> program; // Program memory
-	bool halted;             // Program exited
 
 	// Validate all the instructions in the program
 	void validate_program()
 	{
 		auto backup_mem = memory;
-		auto backup_mem_size = memory_size;
-		uint8_t temp;
-		memory = &temp;
-		memory_size = 1;
+		memory = {};
 
 		std::ostringstream err;
 		for(pc = 0; pc+3 < program.size(); pc+=4)
@@ -174,9 +178,9 @@ private:
 		}
 
 		memory = backup_mem;
-		memory_size = backup_mem_size;
-		for (int i = 0; i < 32; i++) x[i] = 0;
-		x[2] = memory_size; // sp points to end of memory
+		for(auto& xn : x) xn=0;
+		//x2 - stack pointer (sp)
+		x[2] = memory.size()+stack.size();
 
 		auto err_str = err.str();
 		if(err_str != "")
@@ -236,9 +240,13 @@ private:
 	template<typename T>
 	T& mem_ref(u64 addr)
 	{
-		if (addr + sizeof(T) > memory_size)
+		if (addr + sizeof(T) > memory.size()+stack.size())
 			throw std::runtime_error("Memory access out of bounds");
-		return *reinterpret_cast<T*>(memory + addr);
+		if (addr < memory.size() && addr + sizeof(T) > memory.size()) //between data and stack
+			throw std::runtime_error("Memory access out of bounds");
+
+		return (addr < memory.size()) ? *reinterpret_cast<T*>(memory.data() + addr)
+							: *reinterpret_cast<T*>(stack.data() + addr);
 	}
 
 	template<typename T>
