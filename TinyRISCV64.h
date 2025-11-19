@@ -62,7 +62,7 @@ private:
 	std::vector<u8> program; // Program memory
 	std::array<u64,32> x;    // Registers x0-x31
 	std::vector<u8> stack;   // Stack memory
-	std::span<u8> memory;    // Data memory
+	std::span<u8> data;      // Data memory
 	bool halted;             // Program exited
 
 	//virtual addressing:
@@ -95,7 +95,7 @@ public:
 	// Set memory for data access
 	void set_memory(u8* mem, size_t size)
 	{
-		memory = std::span(mem,size);
+		data = std::span(mem,size);
 	}
 
 	// Load program from file
@@ -133,11 +133,11 @@ public:
 		halted = false;
 		size_t count = 0;
 
-		if(memory.empty())
+		if(data.empty())
 			throw std::invalid_argument("No memory context set for execution");
 
 		//x2 - stack pointer (sp)
-		x[2] = memory.size()+stack.size();
+		x[2] = data.size()+stack.size();
 
 		while (!halted && pc+3 < program.size())
 		{
@@ -155,8 +155,8 @@ private:
 	// Validate all the instructions in the program
 	void validate_program()
 	{
-		auto backup_mem = memory;
-		memory = {};
+		auto backup_mem = data;
+		data = {};
 
 		std::ostringstream err;
 		for(pc = 0; pc+3 < program.size(); pc+=4)
@@ -177,10 +177,10 @@ private:
 			{}
 		}
 
-		memory = backup_mem;
+		data = backup_mem;
 		for(auto& xn : x) xn=0;
 		//x2 - stack pointer (sp)
-		x[2] = memory.size()+stack.size();
+		x[2] = data.size()+stack.size();
 
 		auto err_str = err.str();
 		if(err_str != "")
@@ -240,13 +240,13 @@ private:
 	template<typename T>
 	T& mem_ref(u64 addr)
 	{
-		if (addr + sizeof(T) > memory.size()+stack.size())
+		if (addr + sizeof(T) > data.size()+stack.size())
 			throw std::runtime_error("Memory access out of bounds");
-		if (addr < memory.size() && addr + sizeof(T) > memory.size()) //between data and stack
+		if (addr < data.size() && addr + sizeof(T) > data.size()) //between data and stack
 			throw std::runtime_error("Memory access out of bounds");
 
-		return (addr < memory.size()) ? *reinterpret_cast<T*>(memory.data() + addr)
-							: *reinterpret_cast<T*>(stack.data() + addr);
+		return (addr < data.size()) ? *reinterpret_cast<T*>(data.data() + addr)
+							: *reinterpret_cast<T*>(stack.data() + addr - data.size());
 	}
 
 	template<typename T>
