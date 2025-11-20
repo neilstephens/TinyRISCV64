@@ -58,16 +58,19 @@ using i64 = int64_t;
 class VM
 {
 private:
-	u64 pc;                  // Program counter
-	std::vector<u8> program; // Program memory
-	std::array<u64,32> x;    // Registers x0-x31
-	std::vector<u8> stack;   // Stack memory
-	std::span<u8> data;      // Data memory
-	bool halted;             // Program exited
+	u64 pc;                    // Program counter
+	std::vector<u8> program{}; // Program memory
+	std::array<u64,32> x{};    // Registers x0-x31
+	std::vector<u8> stack;     // Stack memory
+	std::span<u8> data{};      // Data memory
+	bool halted = false;       // Program exited
 
-	//virtual addressing:
+	//virtual address space:
 	//  0 to memory_size-1 : data memory
+	//  TODO: overflow detection zone
 	//  memory_size to memory_size+stack_size-1 : stack memory
+	//  TODO: overflow detection zone
+	//  TODO: memory_size+stack_size to memory_size+stack_size+program_size-1 : program memory
 
 public:
 	VM(const size_t stack_size):
@@ -136,6 +139,8 @@ public:
 		if(data.empty())
 			throw std::invalid_argument("No memory context set for execution");
 
+		//x1 - return address (ra)
+		x[1] = program.size();
 		//x2 - stack pointer (sp)
 		x[2] = data.size()+stack.size();
 
@@ -240,6 +245,8 @@ private:
 	template<typename T>
 	T& mem_ref(u64 addr)
 	{
+		if (addr > 0xFFFFFFFFFFFFFFF0ULL) //guard against wrap-around
+			throw std::runtime_error("Memory access out of bounds");
 		if (addr + sizeof(T) > data.size()+stack.size())
 			throw std::runtime_error("Memory access out of bounds");
 		if (addr < data.size() && addr + sizeof(T) > data.size()) //between data and stack
