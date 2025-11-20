@@ -346,7 +346,7 @@ private:
 
 	inline void exec_alu_reg(u8 funct3, u8 funct7, u8 rd, u8 rs1, u8 rs2)
 	{
-		const u8 op = funct7 << 3 | funct3;
+		const auto op = funct7 << 3 | funct3;
 		switch(op)
 		{
 			case 0x000: x[rd] = x[rs1] + x[rs2]; break;                                               // ADD
@@ -370,11 +370,11 @@ private:
 				               static_cast<u128>(x[rs2])) >> 64; break; // MULHU
 			case 0x00c:
 				if (x[rs2]) x[rd] = static_cast<u64>(static_cast<i64>(x[rs1]) / static_cast<i64>(x[rs2]));
-				else x[rd] = -1ULL;
+				else x[rd] = -1ULL; //TODO: check if this is the correct divide by zero behaviour
 				break; // DIV
 			case 0x00d:
 				if (x[rs2]) x[rd] = x[rs1] / x[rs2];
-				else x[rd] = -1ULL;
+				else x[rd] = -1ULL; //TODO: check if this is the correct divide by zero behaviour
 				break; // DIVU
 			case 0x00e:
 				if (x[rs2]) x[rd] = static_cast<u64>(static_cast<i64>(x[rs1]) % static_cast<i64>(x[rs2]));
@@ -390,7 +390,7 @@ private:
 
 	inline void exec_alu_reg32(u8 funct3, u8 funct7, u8 rd, u8 rs1, u8 rs2)
 	{
-		const u8 op = funct7 << 3 | funct3;
+		const auto op = funct7 << 3 | funct3;
 		i32 result;
 		u32 a = static_cast<u32>(x[rs1]);
 		u32 b = static_cast<u32>(x[rs2]);
