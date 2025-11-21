@@ -38,7 +38,6 @@
 #include <cstdint>
 #include <vector>
 #include <span>
-#include <sstream>
 #include <stdexcept>
 #include <fstream>
 #include <cstring>
@@ -59,28 +58,41 @@ class VM
 {
 private:
 	u64 pc;                    // Program counter
-	std::vector<u8> program{}; // Program memory
+	std::vector<u8> program;   // Program memory
 	std::array<u64,32> x{};    // Registers x0-x31
 	std::vector<u8> stack;     // Stack memory
-	std::span<u8> data{};      // Data memory
-	bool halted = false;       // Program exited
+	std::span<u8> data;        // Data memory
+	bool halted{false};        // Program exited
 
-	//virtual address space:
-	//  0 to memory_size-1 : data memory
-	//  TODO: overflow detection zone
-	//  memory_size to memory_size+stack_size-1 : stack memory
-	//  TODO: overflow detection zone
-	//  TODO: memory_size+stack_size to memory_size+stack_size+program_size-1 : program memory
+	// Virtual addressing:
+	static const u64 p_beg = 0;                                       // Program mem begin
+	const u64 p_end = program.size();                                 // Program mem end
+		/* 64 overflow detection addresses */
+	const u64 d_beg = program.size()+64;                              // Data mem begin
+	const u64 d_end = program.size()+64+data.size();                  // Data mem end
+		/* 64 overflow detection addresses */
+	const u64 s_beg = program.size()+64+data.size()+64;               // Stack mem begin
+	const u64 s_end = program.size()+64+data.size()+64+stack.size();  // Stack mem end
 
 public:
-	VM(const size_t stack_size):
-		stack(stack_size)
+	VM(const size_t stack_size, const std::string& prog_filename, u8* const mem = nullptr, const size_t mem_size = 0):
+		program(load_program(prog_filename)),
+		stack(stack_size),
+		data(mem,mem_size)
 	{
-		for(auto& xn : x) xn=0;
+		reset();
+	}
+
+	VM(const size_t stack_size, const u8* const prog, size_t prog_size, u8* const mem = nullptr, const size_t mem_size = 0):
+		program(load_program(prog,prog_size)),
+		stack(stack_size),
+		data(mem,mem_size)
+	{
+		reset();
 	}
 
 	// Set register value (x0-x31, x0 is always 0)
-	void set_register(int reg, u64 value)
+	void register_set(const size_t reg, const u64 value)
 	{
 		if (reg < 0 || reg >= 32)
 			throw std::invalid_argument("Invalid register number");
@@ -88,21 +100,65 @@ public:
 	}
 
 	// Get register value
-	u64 get_register(int reg) const
+	u64 register_get(const size_t reg) const
 	{
 		if (reg < 0 || reg >= 32)
 			throw std::invalid_argument("Invalid register number");
 		return x[reg];
 	}
 
-	// Set memory for data access
-	void set_memory(u8* mem, size_t size)
+	// Push a value onto the stack and return the virtual address (stack pointer)
+	template<typename T>
+	u64 stack_push(const T& val)
 	{
-		data = std::span(mem,size);
+		x[2] -= sizeof(T);
+		mem_store(x[2],val);
+		return x[2];
 	}
 
+	template<typename T>
+	T stack_pop()
+	{
+		x[2] += sizeof(T);
+		return mem_load<T>(x[2]-sizeof(T));
+	}
+
+	// Get the virtual address of the mapped data memory
+	u64 data_addr() const
+	{
+		return d_beg;
+	}
+
+	// Execute program
+	void execute_program(const u64 entry_point = p_beg, const size_t max_instructions = 100000)
+	{
+		pc = entry_point;
+		halted = false;
+		size_t count = 0;
+
+		while (!halted && pc+3 < program.size())
+		{
+			if (++count > max_instructions)
+				throw std::runtime_error("Maximum instruction count exceeded");
+			execute_instruction();
+		}
+	}
+
+	void reset()
+	{
+		for(auto& xn : x) xn=0;
+		//x1 - return address (ra)
+		x[1] = program.size();
+		//x2 - stack pointer (sp)
+		x[2] = program.size()+64+data.size()+64+stack.size();
+		//x8 - frame pointer (s0 / fp)
+		x[8] = x[2];
+	}
+
+private:
+
 	// Load program from file
-	void load_program(const std::string& filename)
+	static std::vector<u8> load_program(const std::string& filename)
 	{
 		std::ifstream fin(filename, std::ios::binary | std::ios::ate);
 		if (!fin)
@@ -113,87 +169,27 @@ public:
 			throw std::invalid_argument("Program too large (max 1MB)");
 
 		fin.seekg(0, std::ios::beg);
-		program.resize(size);
-		fin.read(reinterpret_cast<char*>(program.data()), size);
-		validate_program();
+		std::vector<u8> prog(size);
+		fin.read(reinterpret_cast<char*>(prog.data()), size);
+		return prog;
 	}
 
-	// Load program from memory
-	void load_program(const void* prog, size_t size)
+	// Load program directly
+	static std::vector<u8> load_program(const u8* const prog, const size_t size)
 	{
 		if (size > 1024L * 1024)
 			throw std::invalid_argument("Program too large (max 1MB)");
 
-		program.resize(size);
-		std::memcpy(program.data(), prog, size);
-		validate_program();
+		std::vector<u8> progr(size);
+		std::memcpy(progr.data(), prog, size);
+		return progr;
 	}
 
-	// Execute program
-	void execute_program(u64 entry_point = 0, size_t max_instructions = 100000)
+	void execute_instruction()
 	{
-		pc = entry_point;
-		halted = false;
-		size_t count = 0;
+		const u32 inst = *reinterpret_cast<const u32*>(&program[pc]);
+		pc += 4;
 
-		if(data.empty())
-			throw std::invalid_argument("No memory context set for execution");
-
-		//x1 - return address (ra)
-		x[1] = program.size();
-		//x2 - stack pointer (sp)
-		x[2] = data.size()+stack.size();
-
-		while (!halted && pc+3 < program.size())
-		{
-			if (++count > max_instructions)
-				throw std::runtime_error("Maximum instruction count exceeded");
-
-			const u32 inst = *reinterpret_cast<const u32*>(&program[pc]);
-			pc += 4;
-			execute_instruction(inst);
-		}
-	}
-
-private:
-
-	// Validate all the instructions in the program
-	void validate_program()
-	{
-		auto backup_mem = data;
-		data = {};
-
-		std::ostringstream err;
-		for(pc = 0; pc+3 < program.size(); pc+=4)
-		{
-			try
-			{
-				auto tmp_pc = pc;
-				const u32 inst = *reinterpret_cast<const u32*>(&program[pc]);
-				pc += 4;
-				execute_instruction(inst);
-				pc = tmp_pc;
-			}
-			catch (const std::invalid_argument &e)
-			{
-				err << std::string("VM Exception: ") + e.what() << std::string("\n");
-			}
-			catch (const std::runtime_error &)
-			{}
-		}
-
-		data = backup_mem;
-		for(auto& xn : x) xn=0;
-		//x2 - stack pointer (sp)
-		x[2] = data.size()+stack.size();
-
-		auto err_str = err.str();
-		if(err_str != "")
-			throw std::invalid_argument("Invalid Program: "+err_str);
-	}
-
-	void execute_instruction(u32 inst)
-	{
 		// Decode
 		const u8 opcode = inst & 0x7f;
 		const u8 funct3 = (inst >> 12) & 0x7;
@@ -247,13 +243,17 @@ private:
 	{
 		if (addr > 0xFFFFFFFFFFFFFFF0ULL) //guard against wrap-around
 			throw std::runtime_error("Memory access out of bounds");
-		if (addr + sizeof(T) > data.size()+stack.size())
-			throw std::runtime_error("Memory access out of bounds");
-		if (addr < data.size() && addr + sizeof(T) > data.size()) //between data and stack
-			throw std::runtime_error("Memory access out of bounds");
 
-		return (addr < data.size()) ? *reinterpret_cast<T*>(data.data() + addr)
-							: *reinterpret_cast<T*>(stack.data() + addr - data.size());
+		const u64 addr_max = addr + sizeof(T) - 1;
+
+		if(addr_max < p_end)
+			return *reinterpret_cast<T*>(program.data() + addr);
+		if(addr >= d_beg && addr_max < d_end)
+			return *reinterpret_cast<T*>(data.data() + addr - d_beg);
+		if(addr >= s_beg && addr_max < s_end)
+			return *reinterpret_cast<T*>(stack.data() + addr - s_beg);
+
+		throw std::runtime_error("Memory access out of bounds");
 	}
 
 	template<typename T>
