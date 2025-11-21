@@ -197,7 +197,6 @@ private:
 		const u8 rd = (inst >> 7) & 0x1f;
 		const u8 rs1 = (inst >> 15) & 0x1f;
 		const u8 rs2 = (inst >> 20) & 0x1f;
-		const u8 shamt = rs2;
 
 		const i64 imm_i = static_cast<i64>(static_cast<i32>(inst) >> 20);
 		const i64 imm_s = (imm_i & ~0x1fLL) | rd;
@@ -225,8 +224,8 @@ private:
 			case 0x63: exec_branch(funct3, rs1, rs2, imm_b); break;                  // Branch
 			case 0x03: exec_load(funct3, rd, rs1, imm_i); break;                     // Load
 			case 0x23: exec_store(funct3, rs1, rs2, imm_s); break;                   // Store
-			case 0x13: exec_alu_imm(funct3, funct7, rd, rs1, imm_i, shamt); break;   // ALU immediate
-			case 0x1b: exec_alu_imm32(funct3, funct7, rd, rs1, imm_i, shamt); break; // ALU immediate 32-bit
+			case 0x13: exec_alu_imm(funct3, funct7, rd, rs1, imm_i); break;          // ALU immediate
+			case 0x1b: exec_alu_imm32(funct3, funct7, rd, rs1, imm_i); break;        // ALU immediate 32-bit
 			case 0x33: exec_alu_reg(funct3, funct7, rd, rs1, rs2); break;            // ALU register
 			case 0x3b: exec_alu_reg32(funct3, funct7, rd, rs1, rs2); break;          // ALU register 32-bit
 			case 0x0f: break;                                                        // FENCE (nop)
@@ -314,18 +313,18 @@ private:
 		}
 	}
 
-	inline void exec_alu_imm(u8 funct3, u8 funct7, u8 rd, u8 rs1, i64 imm, u8 shamt)
+	inline void exec_alu_imm(u8 funct3, u8 funct7, u8 rd, u8 rs1, i64 imm)
 	{
 		switch(funct3)
 		{
 			case 0: x[rd] = x[rs1] + imm; break;                   // ADDI
-			case 1: x[rd] = x[rs1] << shamt; break;                // SLLI
+			case 1: x[rd] = x[rs1] << imm; break;                  // SLLI
 			case 2: x[rd] = static_cast<i64>(x[rs1]) < imm; break; // SLTI
 			case 3: x[rd] = x[rs1] < static_cast<u64>(imm); break; // SLTIU
 			case 4: x[rd] = x[rs1] ^ imm; break;                   // XORI
 			case 5:
-				if (funct7 == 0) x[rd] = x[rs1] >> shamt;                         // SRLI
-				else x[rd] = static_cast<u64>(static_cast<i64>(x[rs1]) >> shamt); // SRAI
+				if (funct7 == 0) x[rd] = x[rs1] >> imm;                         // SRLI
+				else x[rd] = static_cast<u64>(static_cast<i64>(x[rs1]) >> imm); // SRAI
 				break;
 			case 6: x[rd] = x[rs1] | imm; break; // ORI
 			case 7: x[rd] = x[rs1] & imm; break; // ANDI
@@ -333,18 +332,18 @@ private:
 		}
 	}
 
-	inline void exec_alu_imm32(u8 funct3, u8 funct7, u8 rd, u8 rs1, i32 imm, u8 shamt)
+	inline void exec_alu_imm32(u8 funct3, u8 funct7, u8 rd, u8 rs1, i32 imm)
 	{
 		u32 result;
 		switch(funct3)
 		{
 			case 0: result = static_cast<u32>(x[rs1]) + imm; break;    // ADDIW
-			case 1: result = static_cast<u32>(x[rs1]) << shamt; break; // SLLIW
+			case 1: result = static_cast<u32>(x[rs1]) << imm; break;   // SLLIW
 			case 5:
 				if (funct7 == 0)
-					result = static_cast<u32>(x[rs1]) >> shamt; // SRLIW
+					result = static_cast<u32>(x[rs1]) >> imm; // SRLIW
 				else
-					result = static_cast<u32>(static_cast<i32>(x[rs1]) >> shamt); // SRAIW
+					result = static_cast<u32>(static_cast<i32>(x[rs1]) >> imm); // SRAIW
 				break;
 			default: throw std::invalid_argument("Unknown alu_imm32 operation");
 		}
