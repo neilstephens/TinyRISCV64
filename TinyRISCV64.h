@@ -224,8 +224,8 @@ private:
 			case 0x63: exec_branch(funct3, rs1, rs2, imm_b); break;                  // Branch
 			case 0x03: exec_load(funct3, rd, rs1, imm_i); break;                     // Load
 			case 0x23: exec_store(funct3, rs1, rs2, imm_s); break;                   // Store
-			case 0x13: exec_alu_imm(funct3, funct7, rd, rs1, imm_i); break;          // ALU immediate
-			case 0x1b: exec_alu_imm32(funct3, funct7, rd, rs1, imm_i); break;        // ALU immediate 32-bit
+			case 0x13: exec_alu_imm(funct3, rd, rs1, imm_i); break;                  // ALU immediate
+			case 0x1b: exec_alu_imm32(funct3, rd, rs1, imm_i); break;                // ALU immediate 32-bit
 			case 0x33: exec_alu_reg(funct3, funct7, rd, rs1, rs2); break;            // ALU register
 			case 0x3b: exec_alu_reg32(funct3, funct7, rd, rs1, rs2); break;          // ALU register 32-bit
 			case 0x0f: break;                                                        // FENCE (nop)
@@ -313,7 +313,7 @@ private:
 		}
 	}
 
-	inline void exec_alu_imm(u8 funct3, u8 funct7, u8 rd, u8 rs1, i64 imm)
+	inline void exec_alu_imm(u8 funct3, u8 rd, u8 rs1, i64 imm)
 	{
 		switch(funct3)
 		{
@@ -323,8 +323,8 @@ private:
 			case 3: x[rd] = x[rs1] < static_cast<u64>(imm); break; // SLTIU
 			case 4: x[rd] = x[rs1] ^ imm; break;                   // XORI
 			case 5:
-				if (funct7 == 0) x[rd] = x[rs1] >> imm;                         // SRLI
-				else x[rd] = static_cast<u64>(static_cast<i64>(x[rs1]) >> imm); // SRAI
+				if (!(imm&0x400)) x[rd] = x[rs1] >> imm;                               // SRLI
+				else x[rd] = static_cast<u64>(static_cast<i64>(x[rs1]) >> (imm&0x3f)); // SRAI
 				break;
 			case 6: x[rd] = x[rs1] | imm; break; // ORI
 			case 7: x[rd] = x[rs1] & imm; break; // ANDI
@@ -332,7 +332,7 @@ private:
 		}
 	}
 
-	inline void exec_alu_imm32(u8 funct3, u8 funct7, u8 rd, u8 rs1, i32 imm)
+	inline void exec_alu_imm32(u8 funct3, u8 rd, u8 rs1, i32 imm)
 	{
 		u32 result;
 		switch(funct3)
@@ -340,10 +340,10 @@ private:
 			case 0: result = static_cast<u32>(x[rs1]) + imm; break;    // ADDIW
 			case 1: result = static_cast<u32>(x[rs1]) << imm; break;   // SLLIW
 			case 5:
-				if (funct7 == 0)
-					result = static_cast<u32>(x[rs1]) >> imm; // SRLIW
+				if (!(imm&0x400))
+					result = static_cast<u32>(x[rs1]) >> imm;      // SRLIW
 				else
-					result = static_cast<u32>(static_cast<i32>(x[rs1]) >> imm); // SRAIW
+					result = static_cast<u32>(static_cast<i32>(x[rs1]) >> (imm&0x1f)); // SRAIW
 				break;
 			default: throw std::invalid_argument("Unknown alu_imm32 operation");
 		}
@@ -374,14 +374,16 @@ private:
 				               static_cast<u128>(x[rs2])) >> 64; break; // MULHSU
 			case 0x00b: x[rd] = (static_cast<u128>(x[rs1]) *
 				               static_cast<u128>(x[rs2])) >> 64; break; // MULHU
-			case 0x00c:
-				if (x[rs2]) x[rd] = static_cast<u64>(static_cast<i64>(x[rs1]) / static_cast<i64>(x[rs2]));
+			case 0x00c: // DIV
+				if (x[rs2]) x[rd] = (static_cast<i64>(x[rs1]) == INT64_MIN && static_cast<i64>(x[rs2]) == -1)
+							  ? static_cast<u64>(INT64_MIN)
+							  : static_cast<u64>(static_cast<i64>(x[rs1]) / static_cast<i64>(x[rs2]));
 				else x[rd] = -1ULL; //TODO: check if this is the correct divide by zero behaviour
-				break; // DIV
-			case 0x00d:
+				break;
+			case 0x00d: // DIVU
 				if (x[rs2]) x[rd] = x[rs1] / x[rs2];
 				else x[rd] = -1ULL; //TODO: check if this is the correct divide by zero behaviour
-				break; // DIVU
+				break;
 			case 0x00e:
 				if (x[rs2]) x[rd] = static_cast<u64>(static_cast<i64>(x[rs1]) % static_cast<i64>(x[rs2]));
 				else x[rd] = x[rs1];
@@ -412,7 +414,9 @@ private:
 			// M extension 32-bit
 			case 0x008: result = static_cast<i32>(a * b); break; // MULW
 			case 0x00c:
-				if (b) result = static_cast<i32>(a) / static_cast<i32>(b);
+				if (b) result = (static_cast<i32>(a) == INT32_MIN && static_cast<i32>(b) == -1)
+						    ? static_cast<i32>(INT32_MIN)
+						    : static_cast<i32>(a) / static_cast<i32>(b);
 				else result = -1;
 				break; // DIVW
 			case 0x00d:
