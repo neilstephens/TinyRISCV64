@@ -41,6 +41,7 @@
 #include <stdexcept>
 #include <fstream>
 #include <cstring>
+#include <array>
 
 namespace TinyRISCV64
 {
@@ -209,7 +210,7 @@ private:
 
 	void execute_instruction()
 	{
-		const u32 inst = *reinterpret_cast<const u32*>(&program[pc]);
+		u32 inst; memcpy(&inst,&program[pc],4);
 		pc += 4;
 
 		// Decode
@@ -260,7 +261,7 @@ private:
 
 	// Memory access helpers
 	template<typename T>
-	T& mem_ref(u64 addr)
+	u8* mem_ptr(u64 addr)
 	{
 		if (addr > 0xFFFFFFFFFFFFFFF0ULL) //guard against wrap-around
 			throw std::runtime_error("Memory access out of bounds");
@@ -268,11 +269,11 @@ private:
 		const u64 addr_max = addr + sizeof(T) - 1;
 
 		if(addr_max < p_end)
-			return *reinterpret_cast<T*>(program.data() + addr);
+			return program.data() + addr;
 		if(addr >= d_beg && addr_max < d_end)
-			return *reinterpret_cast<T*>(data.data() + addr - d_beg);
+			return data.data() + addr - d_beg;
 		if(addr >= s_beg && addr_max < s_end)
-			return *reinterpret_cast<T*>(stack.data() + addr - s_beg);
+			return stack.data() + addr - s_beg;
 
 		throw std::runtime_error("Memory access out of bounds");
 	}
@@ -280,13 +281,15 @@ private:
 	template<typename T>
 	T mem_load(u64 addr)
 	{
-		return mem_ref<T>(addr);
+		T value;
+		memcpy(&value, mem_ptr<T>(addr), sizeof(T));
+		return value;
 	}
 
 	template<typename T>
 	void mem_store(u64 addr, T value)
 	{
-		mem_ref<T>(addr) = value;
+		memcpy(mem_ptr<T>(addr), &value, sizeof(T));
 	}
 
 	// Instruction execution helpers
