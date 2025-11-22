@@ -65,30 +65,44 @@ private:
 	bool halted{false};        // Program exited
 
 	// Virtual addressing:
-	static const u64 p_beg = 0;                                       // Program mem begin
-	const u64 p_end = program.size();                                 // Program mem end
-		/* 64 overflow detection addresses */
-	const u64 d_beg = program.size()+64;                              // Data mem begin
-	const u64 d_end = program.size()+64+data.size();                  // Data mem end
-		/* 64 overflow detection addresses */
-	const u64 s_beg = program.size()+64+data.size()+64;               // Stack mem begin
-	const u64 s_end = program.size()+64+data.size()+64+stack.size();  // Stack mem end
+	static constexpr
+	u64 p_beg = 0;   // Program mem begin
+	u64 p_end;       // Program mem end
+							/* 64 overflow detection addresses */
+	u64 d_beg;       // Data mem begin
+	u64 d_end;       // Data mem end
+							/* 64 overflow detection addresses */
+	u64 s_beg;       // Stack mem begin
+	u64 s_end;       // Stack mem end
 
 public:
-	VM(const size_t stack_size, const std::string& prog_filename, u8* const mem = nullptr, const size_t mem_size = 0):
-		program(load_program(prog_filename)),
-		stack(stack_size),
-		data(mem,mem_size)
+	VM(const size_t stack_size = 4096): stack(stack_size) { reset(); }
+
+	// Load bytecode from file and return the starting virtual addr
+	//   resets state and invalidates previous virtual addrs
+	u64 program_load(const std::string& prog_filename)
 	{
+		program = load_program(prog_filename);
 		reset();
+		return p_beg;
 	}
 
-	VM(const size_t stack_size, const u8* const prog, size_t prog_size, u8* const mem = nullptr, const size_t mem_size = 0):
-		program(load_program(prog,prog_size)),
-		stack(stack_size),
-		data(mem,mem_size)
+	// Copy bytecode and return the starting virtual addr
+	//   resets state and invalidates previous virtual addrs
+	u64 program_load(const u8* const prog, size_t prog_size)
 	{
+		program = load_program(prog,prog_size);
 		reset();
+		return p_beg;
+	}
+
+	// Map virtual addresses to the referenced data
+	//   resets state and invalidates previous virtual addrs
+	u64 map_data_mem(u8* const mem, const size_t mem_size)
+	{
+		data = {mem,mem_size};
+		reset();
+		return d_beg;
 	}
 
 	// Set register value (x0-x31, x0 is always 0)
@@ -123,10 +137,10 @@ public:
 		return mem_load<T>(x[2]-sizeof(T));
 	}
 
-	// Get the virtual address of the mapped data memory
-	u64 data_addr() const
+	template<typename T>
+	T stack_peek()
 	{
-		return d_beg;
+		return mem_load<T>(x[2]);
 	}
 
 	// Execute program
@@ -153,6 +167,14 @@ public:
 		x[2] = program.size()+64+data.size()+64+stack.size();
 		//x8 - frame pointer (s0 / fp)
 		x[8] = x[2];
+
+		p_end = program.size();
+		/* 64 overflow detection addresses */
+		d_beg = program.size()+64;
+		d_end = program.size()+64+data.size();
+		/* 64 overflow detection addresses */
+		s_beg = program.size()+64+data.size()+64;
+		s_end = program.size()+64+data.size()+64+stack.size();
 	}
 
 private:
@@ -369,11 +391,11 @@ private:
 			// M extension
 			case 0x008: x[rd] = x[rs1] * x[rs2]; break; // MUL
 			case 0x009: x[rd] = (static_cast<i128>(static_cast<i64>(x[rs1])) *
-				               static_cast<i128>(static_cast<i64>(x[rs2]))) >> 64; break; // MULH
+						   static_cast<i128>(static_cast<i64>(x[rs2]))) >> 64; break; // MULH
 			case 0x00a: x[rd] = (static_cast<i128>(static_cast<i64>(x[rs1])) *
-				               static_cast<u128>(x[rs2])) >> 64; break; // MULHSU
+						   static_cast<u128>(x[rs2])) >> 64; break; // MULHSU
 			case 0x00b: x[rd] = (static_cast<u128>(x[rs1]) *
-				               static_cast<u128>(x[rs2])) >> 64; break; // MULHU
+						   static_cast<u128>(x[rs2])) >> 64; break; // MULHU
 			case 0x00c: // DIV
 				if (x[rs2]) x[rd] = (static_cast<i64>(x[rs1]) == INT64_MIN && static_cast<i64>(x[rs2]) == -1)
 							  ? static_cast<u64>(INT64_MIN)

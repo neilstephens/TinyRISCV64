@@ -59,15 +59,15 @@ int main(int argc, char** argv)
 		std::vector<uint8_t> native_buf(buf);
 
 		// Create VM with a modest stack (4 KiB), with memory mapped to our buffer
-		TinyRISCV64::VM vm(4 * 1024, "stress.rv64im",buf.data(),buf.size());
+		TinyRISCV64::VM vm(4096);
+		vm.program_load("stress.rv64im");
+		auto data_addr_buf = vm.map_data_mem(buf.data(),buf.size());
 
 		//the program implements get_addrs(u8*,sz,u64*,u64*)
 
 		// make room on the stack for the results
 		auto stack_addr_src = vm.stack_push<uint64_t>(0);
 		auto stack_addr_dst = vm.stack_push<uint64_t>(0);
-		// get the virtual address that buf was mapped to
-		auto data_addr_buf = vm.data_addr();
 
 		//set the fn arg registers
 		vm.register_set(10,data_addr_buf);
