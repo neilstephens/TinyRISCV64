@@ -34,7 +34,8 @@ int main(int argc, char** argv)
 	try
 	{
 		// Create VM with a modest stack (4 KiB)
-		TinyRISCV64::VM vm(4 * 1024, "rv64im_test.dat");
+		TinyRISCV64::VM vm(4096);
+		vm.program_load("rv64im_test.dat");
 
 		//save the stack pointer
 		auto sp_before = vm.register_get(2);
