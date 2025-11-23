@@ -403,14 +403,16 @@ private:
 				if (x[rs2]) x[rd] = (static_cast<i64>(x[rs1]) == INT64_MIN && static_cast<i64>(x[rs2]) == -1)
 							  ? static_cast<u64>(INT64_MIN)
 							  : static_cast<u64>(static_cast<i64>(x[rs1]) / static_cast<i64>(x[rs2]));
-				else x[rd] = -1ULL; //TODO: check if this is the correct divide by zero behaviour
+				else x[rd] = 0xFFFFFFFFFFFFFFFFULL;
 				break;
 			case 0x00d: // DIVU
 				if (x[rs2]) x[rd] = x[rs1] / x[rs2];
-				else x[rd] = -1ULL; //TODO: check if this is the correct divide by zero behaviour
+				else x[rd] = 0xFFFFFFFFFFFFFFFFULL;
 				break;
 			case 0x00e:
-				if (x[rs2]) x[rd] = static_cast<u64>(static_cast<i64>(x[rs1]) % static_cast<i64>(x[rs2]));
+				if (x[rs2]) x[rd] = (static_cast<i64>(x[rs1]) == INT64_MIN && static_cast<i64>(x[rs2]) == -1)
+							  ? 0ULL
+							  : static_cast<u64>(static_cast<i64>(x[rs1]) % static_cast<i64>(x[rs2]));
 				else x[rd] = x[rs1];
 				break; // REM
 			case 0x00f:
