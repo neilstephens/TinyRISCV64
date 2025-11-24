@@ -113,8 +113,7 @@ int main(int argc, char** argv)
 			std::printf("%s Test %zu:\n", pass ? "PASS" : "FAIL", i + 1);
 			std::printf("Expected: 0x%016" PRIX64 "\n", expected);
 			std::printf("Actual:   0x%016" PRIX64 "\n", actual);
-			if (!pass)
-				std::printf("%s\n", test_cases[i].first.c_str());
+			std::printf("%s\n", test_cases[i].first.c_str());
 			std::printf("\n");
 		}
 	}

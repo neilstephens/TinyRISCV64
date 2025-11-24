@@ -41,6 +41,13 @@ extern "C"
 
 int main(int argc, char** argv)
 {
+	if (argc < 2)
+	{
+		std::fprintf(stderr, "Usage: %s <bin_file>\n", argv[0]);
+		return 1;
+	}
+	const char* bin_file = argv[1];
+
 	try
 	{
 		//create a buffer to process
@@ -60,7 +67,7 @@ int main(int argc, char** argv)
 
 		// Create VM with a modest stack (4 KiB), with memory mapped to our buffer
 		TinyRISCV64::VM vm(4096);
-		vm.program_load("stress.rv64im");
+		vm.program_load(bin_file);
 		auto data_addr_buf = vm.map_data_mem(buf.data(),buf.size());
 
 		//the program implements get_addrs(u8*,sz,u64*,u64*)
