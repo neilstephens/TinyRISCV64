@@ -911,6 +911,410 @@ ADDI sp, sp, -8
 SD x29, 0(sp)
 
 # ============================================================================
+# ADDITIONAL EDGE CASE TESTS
+# ============================================================================
+
+# TEST: BEQ with negative values
+# CONTEXT: Branch if both negative and equal
+# EXPECTED PUSH: 0x00000000000000AB
+ADDI x29, x0, -42
+ADDI x28, x0, -42
+BEQ x29, x28, beq_neg_taken
+ADDI x30, x0, 0xFF
+JAL x0, beq_neg_done
+beq_neg_taken:
+ADDI x30, x0, 0xAB
+beq_neg_done:
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: BNE taken with different signs
+# CONTEXT: Branch if not equal (positive vs negative)
+# EXPECTED PUSH: 0x00000000000000AC
+ADDI x29, x0, 42
+ADDI x28, x0, -42
+BNE x29, x28, bne_diff_taken
+ADDI x30, x0, 0xFF
+JAL x0, bne_diff_done
+bne_diff_taken:
+ADDI x30, x0, 0xAC
+bne_diff_done:
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: BGE with equal negative values
+# CONTEXT: -5 >= -5 should be true
+# EXPECTED PUSH: 0x00000000000000AD
+ADDI x29, x0, -5
+ADDI x28, x0, -5
+BGE x29, x28, bge_eq_taken
+ADDI x30, x0, 0xFF
+JAL x0, bge_eq_done
+bge_eq_taken:
+ADDI x30, x0, 0xAD
+bge_eq_done:
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: BLT not taken
+# CONTEXT: 10 < 5 is false
+# EXPECTED PUSH: 0x00000000000000AE
+ADDI x29, x0, 10
+ADDI x28, x0, 5
+ADDI x30, x0, 0xAE
+BLT x29, x28, blt_not_taken
+JAL x0, blt_not_done
+blt_not_taken:
+ADDI x30, x0, 0xFF
+blt_not_done:
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: BGEU with zero
+# CONTEXT: 0 >= 0 unsigned should be true
+# EXPECTED PUSH: 0x00000000000000AF
+ADDI x29, x0, 0
+ADDI x28, x0, 0
+BGEU x29, x28, bgeu_zero_taken
+ADDI x30, x0, 0xFF
+JAL x0, bgeu_zero_done
+bgeu_zero_taken:
+ADDI x30, x0, 0xAF
+bgeu_zero_done:
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: BLTU not taken with equal values
+# CONTEXT: 7 < 7 unsigned is false
+# EXPECTED PUSH: 0x00000000000000B0
+ADDI x29, x0, 7
+ADDI x28, x0, 7
+ADDI x30, x0, 0xB0
+BLTU x29, x28, bltu_eq_not_taken
+JAL x0, bltu_eq_done
+bltu_eq_not_taken:
+ADDI x30, x0, 0xFF
+bltu_eq_done:
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: Load from data section - doubleword
+# CONTEXT: Testing LD with data embedded at end of program
+# EXPECTED PUSH: 0x0123456789ABCDEF
+LA x29, data_section_1
+LD x30, 0(x29)
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: Load from data section - word with sign extension
+# CONTEXT: Testing LW with embedded negative value
+# EXPECTED PUSH: 0xFFFFFFFFDEADBEEF
+LA x29, data_section_2
+LW x30, 0(x29)
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: Load from data section - halfword unsigned
+# CONTEXT: Testing LHU with embedded value
+# EXPECTED PUSH: 0x000000000000CAFE
+LA x29, data_section_3
+LHU x30, 0(x29)
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: Load from data section - byte with sign extension
+# CONTEXT: Testing LB with negative byte
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFF80
+LA x29, data_section_4
+LB x30, 0(x29)
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: SUB result of zero
+# CONTEXT: Subtracting equal values
+# EXPECTED PUSH: 0x0000000000000000
+ADDI x29, x0, 123
+ADDI x28, x0, 123
+SUB x30, x29, x28
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: XOR with same register (clear)
+# CONTEXT: x XOR x = 0
+# EXPECTED PUSH: 0x0000000000000000
+ADDI x29, x0, -1
+XOR x30, x29, x29
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: OR with zero (identity)
+# CONTEXT: x OR 0 = x
+# EXPECTED PUSH: 0x00000000000000FF
+ADDI x29, x0, 0xFF
+OR x30, x29, x0
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: AND with self (identity)
+# CONTEXT: x AND x = x
+# EXPECTED PUSH: 0x00000000000000AA
+ADDI x29, x0, 0xAA
+AND x30, x29, x29
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: SLLI by 0 (no shift)
+# CONTEXT: Shift by 0 should not change value
+# EXPECTED PUSH: 0x0000000000000042
+ADDI x29, x0, 0x42
+SLLI x30, x29, 0
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: SRLI by 0 (no shift)
+# CONTEXT: Shift by 0 should not change value
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFFFF
+ADDI x29, x0, -1
+SRLI x30, x29, 0
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: SRAI by 0 (no shift)
+# CONTEXT: Shift by 0 should not change value
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFFFF
+ADDI x29, x0, -1
+SRAI x30, x29, 0
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: ADDI with zero immediate
+# CONTEXT: MV pseudo-instruction (ADDI rd, rs, 0)
+# EXPECTED PUSH: 0x0000000000000055
+ADDI x29, x0, 0x55
+ADDI x30, x29, 0        # Equivalent to MV x30, x29
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: XORI with zero (no change)
+# CONTEXT: x XOR 0 = x
+# EXPECTED PUSH: 0x00000000000000CC
+ADDI x29, x0, 0xCC
+XORI x30, x29, 0
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: ANDI with all 1s (identity)
+# CONTEXT: x AND -1 = x
+# EXPECTED PUSH: 0x0000000000000033
+ADDI x29, x0, 0x33
+ANDI x30, x29, -1
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: ORI with all 1s (saturation)
+# CONTEXT: x OR -1 = -1
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFFFF
+ADDI x29, x0, 0x12
+ORI x30, x29, -1
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: Chained shifts (left then right)
+# CONTEXT: (x << 4) >> 4 on positive value
+# EXPECTED PUSH: 0x000000000000000F
+ADDI x29, x0, 0xFF
+SLLI x28, x29, 60 #0xF000000000000000
+SRLI x30, x28, 60 #0x000000000000000F
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: Arithmetic shift preserving sign through chain
+# CONTEXT: (x << 4) >> 4 on negative value (arithmetic)
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFFF0
+ADDI x29, x0, -16       # 0xFFFFFFFFFFFFFFF0
+SLLI x28, x29, 4        # Shift out some sign bits
+SRAI x30, x28, 4        # Arithmetic shift back
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: MULW with negative result
+# CONTEXT: 32-bit multiplication with sign extension
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFF88
+ADDI x29, x0, -10
+ADDI x28, x0, 12
+MULW x30, x29, x28      # (-10 * 12) in 32-bit = -120, sign-extended
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: DIVW with negative result
+# CONTEXT: 32-bit division with sign extension
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFFF6
+ADDI x29, x0, -100
+ADDI x28, x0, 10
+DIVW x30, x29, x28      # (-100 / 10) in 32-bit = -10, sign-extended
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: REMW with negative dividend
+# CONTEXT: 32-bit remainder with sign extension
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFFFD
+ADDI x29, x0, -103
+ADDI x28, x0, 10
+REMW x30, x29, x28      # (-103 % 10) in 32-bit = -3, sign-extended
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: SLTI with maximum positive immediate
+# CONTEXT: Testing with boundary immediate value
+# EXPECTED PUSH: 0x0000000000000001
+ADDI x29, x0, 2000
+SLTI x30, x29, 2047     # 2000 < 2047 = true
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: SLTIU with zero comparison
+# CONTEXT: Testing SNEZ behavior (set if not zero)
+# EXPECTED PUSH: 0x0000000000000001
+SLTIU x30, x0, 1        # 0 < 1 unsigned = true (SNEZ)
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: JAL with x0 as link register (no link)
+# CONTEXT: JAL x0, target is equivalent to J target
+# EXPECTED PUSH: 0x00000000000000B1
+JAL x0, jal_x0_target   # Jump without saving return address
+ADDI x30, x0, 0xFF      # Should skip
+jal_x0_target:
+ADDI x30, x0, 0xB1
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: JALR with zero offset
+# CONTEXT: Testing exact register jump
+# EXPECTED PUSH: 0x00000000000000B2
+AUIPC x29, 0
+ADDI x29, x29, 16       # Point to target
+JALR x28, x29, 0        # Jump to exact address
+ADDI x30, x0, 0xFF      # Should skip
+jalr_zero_offset_target:
+ADDI x30, x0, 0xB2
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: JALR with positive offset
+# CONTEXT: Testing offset addition in JALR
+# EXPECTED PUSH: 0x00000000000000B3
+AUIPC x29, 0
+ADDI x29, x29, 12       # Point 4 bytes before target
+JALR x28, x29, 4        # Jump with +4 offset to reach target
+ADDI x30, x0, 0xFF      # Should skip
+jalr_pos_offset_target:
+ADDI x30, x0, 0xB3
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: Store then load with offset
+# CONTEXT: Testing non-zero offset in load
+# EXPECTED PUSH: 0x0000000000000099
+ADDI x29, x0, 0x99
+ADDI sp, sp, -16        # Make space
+SD x29, 8(sp)           # Store at offset +8
+LD x30, 8(sp)           # Load from offset +8
+ADDI sp, sp, 8          # Clean up half the space
+SD x30, 0(sp)           # Push result
+
+# TEST: Multiple stores then loads (stack operations)
+# CONTEXT: Simulating push/pop sequence
+# EXPECTED PUSH: 0x0000000000000011
+ADDI x29, x0, 0x11
+ADDI x28, x0, 0x22
+ADDI x27, x0, 0x33
+ADDI sp, sp, -24        # Space for 3 values
+SD x29, 0(sp)
+SD x28, 8(sp)
+SD x27, 16(sp)
+LD x30, 0(sp)           # Load first value back
+ADDI sp, sp, 16         # Pop 2, keep 1
+SD x30, 0(sp)
+
+# TEST: SUBW with overflow to positive
+# CONTEXT: 32-bit subtraction wrapping
+# EXPECTED PUSH: 0x000000007FFFFFFF
+ADDI x29, x0, 1
+SLLI x29, x29, 31       # 0x80000000 in lower 32 bits
+ADDI x28, x0, 1
+SUBW x30, x29, x28      # 0x80000000 - 1 = 0x7FFFFFFF in 32-bit, sign-extended
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: ADDW with wraparound
+# CONTEXT: 32-bit addition wrapping to negative
+# EXPECTED PUSH: 0xFFFFFFFF80000000
+ADDI x29, x0, -1
+ADDI x28, x0, 1
+SLLI x29, x29, 33
+SRLI x29, x29, 33       # Get 0x7FFFFFFF
+ADDW x30, x29, x28      # 0x7FFFFFFF + 1 = 0x80000000, sign-extended
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: Complex load/store pattern
+# CONTEXT: Store multiple sizes, load back
+# EXPECTED PUSH: 0x00000000000000EF
+ADDI x29, x0, -1
+ADDI sp, sp, -8
+SD x29, 0(sp)           # Store all 1s
+ADDI x28, x0, 0xEF
+SB x28, 0(sp)           # Overwrite first byte
+LBU x30, 0(sp)          # Load that byte back
+SD x30, 0(sp)
+
+# TEST: Verify x0 in arithmetic context
+# CONTEXT: x0 used as both source and dest
+# EXPECTED PUSH: 0x0000000000000000
+ADDI x29, x0, 99
+ADD x0, x29, x29        # Try to write 198 to x0 (ignored)
+ADD x30, x0, x0         # Read x0 twice (should be 0)
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: Final sentinel with complement pattern
+# CONTEXT: Different pattern from first sentinel
+# EXPECTED PUSH: 0xAAAAAAAAAAAAAAAA
+ADDI x29, x0, 0xAA
+SLLI x29, x29, 8
+ORI x29, x29, 0xAA      # 0xAAAA
+SLLI x29, x29, 16
+LUI x28, 0xAAAA
+SRLI x28, x28, 12
+OR x29, x29, x28        # 0xAAAAAAAA
+SLLI x29, x29, 32
+SRLI x30, x29, 32
+OR x30, x29, x30        # 0xAAAAAAAAAAAAAAAA
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# ============================================================================
 # END OF TESTS - HALT
 # ============================================================================
 EBREAK                  # Signal end of program
+
+# ============================================================================
+# DATA SECTION - Embedded test data
+# ============================================================================
+# All data placed after EBREAK to avoid alignment issues with instructions
+
+.align 3                # Align to 8-byte boundary
+data_section_1:
+.dword 0x0123456789ABCDEF
+
+.align 2                # Align to 4-byte boundary
+data_section_2:
+.word 0xDEADBEEF
+
+.align 1                # Align to 2-byte boundary
+data_section_3:
+.half 0xCAFE
+
+data_section_4:
+.byte 0x80
