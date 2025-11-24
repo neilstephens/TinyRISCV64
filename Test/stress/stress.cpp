@@ -96,6 +96,12 @@ int main(int argc, char** argv)
 		std::cout<<"Source equal : "<<(native_src==src)<<std::endl;
 		std::cout<<"Destin equal : "<<(native_dst==dst)<<std::endl;
 
+		if(native_buf!=buf
+		|| native_res!=res
+		|| native_src!=src
+		|| native_dst!=dst)
+			return 1;
+
 	}
 	catch (const std::exception &e)
 	{

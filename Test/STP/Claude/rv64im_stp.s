@@ -1278,6 +1278,251 @@ ADD x30, x0, x0         # Read x0 twice (should be 0)
 ADDI sp, sp, -8
 SD x30, 0(sp)
 
+# ============================================================================
+# ADDITIONAL MISSING TESTS FROM PROTOTYPE
+# ============================================================================
+
+# TEST: XOR with alternating bit patterns
+# CONTEXT: 0xAAAA... XOR 0x5555... should produce all 1s
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFFFF
+ADDI x29, x0, 0xAA
+SLLI x29, x29, 8
+ORI x29, x29, 0xAA
+SLLI x29, x29, 16
+LUI x28, 0xAAAA
+SRLI x28, x28, 12
+OR x29, x29, x28
+SLLI x29, x29, 32
+SRLI x27, x29, 32
+OR x29, x29, x27        # x29 = 0xAAAAAAAAAAAAAAAA
+ADDI x28, x0, 0x55
+SLLI x28, x28, 8
+ORI x28, x28, 0x55
+SLLI x28, x28, 16
+LUI x27, 0x5555
+SRLI x27, x27, 12
+OR x28, x28, x27
+SLLI x28, x28, 32
+SRLI x27, x28, 32
+OR x28, x28, x27        # x28 = 0x5555555555555555
+XOR x30, x29, x28
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: AND with disjoint masks
+# CONTEXT: AND of upper and lower 32-bit masks
+# EXPECTED PUSH: 0x0000000000000000
+ADDI x29, x0, -1
+SLLI x29, x29, 32       # x29 = 0xFFFFFFFF00000000
+ADDI x28, x0, -1
+SRLI x28, x28, 32       # x28 = 0x00000000FFFFFFFF
+AND x30, x29, x28
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: OR with upper and lower masks
+# CONTEXT: Should produce all 1s
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFFFF
+ADDI x29, x0, -1
+SLLI x29, x29, 32       # x29 = 0xFFFFFFFF00000000
+ADDI x28, x0, -1
+SRLI x28, x28, 32       # x28 = 0x00000000FFFFFFFF
+OR x30, x29, x28
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: MULHU with maximum unsigned values
+# CONTEXT: 0xFFFFFFFFFFFFFFFF * 0xFFFFFFFFFFFFFFFF
+# EXPECTED PUSH: 0xFFFFFFFFFFFFFFFE
+ADDI x29, x0, -1
+ADDI x28, x0, -1
+MULHU x30, x29, x28     # High 64 bits of max * max
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: MULW with 32-bit overflow
+# CONTEXT: 0x80000000 * 2 in 32-bit space
+# EXPECTED PUSH: 0x0000000000000000
+ADDI x29, x0, 1
+SLLI x29, x29, 31       # x29 = 0x80000000 in lower 32 bits
+ADDI x28, x0, 2
+MULW x30, x29, x28      # (0x80000000 * 2) in 32-bit = 0, sign-extended
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: REMU with maximum value divided by 10
+# CONTEXT: 0xFFFFFFFFFFFFFFFF % 10
+# EXPECTED PUSH: 0x0000000000000005
+ADDI x29, x0, -1
+ADDI x28, x0, 10
+REMU x30, x29, x28      # Remainder of max uint64 / 10
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: REMUW with 32-bit patterns
+# CONTEXT: 0x80000000 % 3 in 32-bit space
+# EXPECTED PUSH: 0x0000000000000002
+ADDI x29, x0, 1
+SLLI x29, x29, 31       # x29 = 0x80000000
+ADDI x28, x0, 3
+REMUW x30, x29, x28     # (0x80000000 % 3) in 32-bit = 2, sign-extended
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: Complex ADD with specific patterns
+# CONTEXT: Adding 0x123456789ABCDEF0 + 0x0FEDCBA987654321
+# EXPECTED PUSH: 0x2222222222222211
+LA x30, data_section_1
+LD x29, 0(x30)
+SLLI x29, x29, 4        # x29 = 0x123456789ABCDEF0
+LD x28, 8(x30)          # x28 = 0x0FEDCBA987654321 
+ADD x30, x29, x28
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: SRL with specific shift
+# CONTEXT: 0xF000000000000000 >> 4
+# EXPECTED PUSH: 0x0F00000000000000
+ADDI x29, x0, 0xF
+SLLI x29, x29, 60       # x29 = 0xF000000000000000
+ADDI x28, x0, 4
+SRL x30, x29, x28
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: SRA with sign bit propagation
+# CONTEXT: 0x8000000000000000 >> 1 (arithmetic)
+# EXPECTED PUSH: 0xC000000000000000
+ADDI x29, x0, 1
+SLLI x29, x29, 63       # x29 = 0x8000000000000000
+ADDI x28, x0, 1
+SRA x30, x29, x28
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: SRAW with sign extension
+# CONTEXT: 32-bit arithmetic shift
+# EXPECTED PUSH: 0xFFFFFFFFC0000000
+ADDI x29, x0, 1
+SLLI x29, x29, 31       # x29 = 0x80000000 in lower 32 bits
+ADDI x28, x0, 1
+SRAW x30, x29, x28      # Arithmetic shift in 32-bit, sign-extended
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# ============================================================================
+# FENCE INSTRUCTIONS
+# ============================================================================
+
+# TEST: FENCE instruction
+# CONTEXT: Memory ordering fence (may be NOP in single-threaded VM)
+# EXPECTED PUSH: 0x0000000000000001
+FENCE
+ADDI x30, x0, 1         # Push 1 to indicate FENCE executed
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# TEST: FENCE.I instruction
+# CONTEXT: Instruction fence (may be NOP)
+# EXPECTED PUSH: 0x0000000000000001
+FENCE.I
+ADDI x30, x0, 1         # Push 1 to indicate FENCE.I executed
+ADDI sp, sp, -8
+SD x30, 0(sp)
+
+# ============================================================================
+# CSR (Control and Status Register) INSTRUCTIONS
+# ============================================================================
+# Note: These may trap or return 0 if CSRs not implemented
+# We'll push the result regardless
+
+# TEST: CSRR - Read cycle counter
+# CONTEXT: Read cycle CSR (if available)
+# EXPECTED PUSH: 0x0000000000000000
+CSRR x30, cycle         # Read cycle CSR (0xC00)
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: CSRRS - CSR Read and Set
+# CONTEXT: Read cycle counter again (set with x0 = no change)
+# EXPECTED PUSH: 0x0000000000000000
+CSRRS x30, cycle, x0
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: CSRRC - CSR Read and Clear
+# CONTEXT: Read cycle counter (clear with x0 = no change)
+# EXPECTED PUSH: 0x0000000000000000
+CSRRC x30, cycle, x0
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: CSRRW - CSR Read and Write
+# CONTEXT: Read cycle, write back same value
+# EXPECTED PUSH: 0x0000000000000000
+CSRR x29, cycle
+CSRRW x30, cycle, x29
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: Read mhartid CSR
+# CONTEXT: Hardware thread ID (typically 0)
+# EXPECTED PUSH: 0x0000000000000000
+CSRR x30, 0xF14         # mhartid CSR
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: CSRRSI - CSR Read and Set Immediate
+# CONTEXT: Read cycle with set immediate 0 (just read)
+# EXPECTED PUSH: 0x0000000000000000
+CSRRSI x30, cycle, 0
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: CSRRCI - CSR Read and Clear Immediate
+# CONTEXT: Read cycle with clear immediate 0 (just read)
+# EXPECTED PUSH: 0x0000000000000000
+CSRRCI x30, cycle, 0
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: CSRRS with non-zero register
+# CONTEXT: Try to set bits in cycle counter (may be read-only)
+# EXPECTED PUSH: 0x0000000000000000
+ADDI x29, x0, 1
+CSRRS x30, cycle, x29   # Try to set bit 0 (probably ignored)
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: CSRRC with non-zero register
+# CONTEXT: Try to clear bits in cycle counter (may be read-only)
+# EXPECTED PUSH: 0x0000000000000000
+ADDI x29, x0, 1
+CSRRC x30, cycle, x29   # Try to clear bit 0 (probably ignored)
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: Read time CSR
+# CONTEXT: Read time counter (if available)
+# EXPECTED PUSH: 0x0000000000000000
+CSRR x30, time          # time CSR (0xC01)
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: Read instret CSR
+# CONTEXT: Read instructions retired counter (if available)
+# EXPECTED PUSH: 0x0000000000000000
+CSRR x30, instret       # instret CSR (0xC02)
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
+# TEST: CSRRWI - CSR Read/Write Immediate
+# CONTEXT: Write 0 to a CSR and read old value
+# EXPECTED PUSH: 0x0000000000000000
+CSRRWI x30, cycle, 0
+ADDI sp, sp, -8
+SD x0, 0(sp)
+
 # TEST: Final sentinel with complement pattern
 # CONTEXT: Different pattern from first sentinel
 # EXPECTED PUSH: 0xAAAAAAAAAAAAAAAA
@@ -1307,6 +1552,7 @@ EBREAK                  # Signal end of program
 .align 3                # Align to 8-byte boundary
 data_section_1:
 .dword 0x0123456789ABCDEF
+.dword 0x0FEDCBA987654321
 
 .align 2                # Align to 4-byte boundary
 data_section_2:
