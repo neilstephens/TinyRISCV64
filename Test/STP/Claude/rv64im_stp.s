@@ -353,8 +353,8 @@ SD x29, 0(sp)
 
 # TEST: LUI with sign extension (RV64)
 # CONTEXT: In RV64, LUI result is sign-extended to 64 bits
-# EXPECTED PUSH: 0x00000000FFFFF000
-LUI x29, 0xFFFFF        # 0xFFFFF000 in lower 32 bits, bit 31=1 but doesn't sign-extend in this VM
+# EXPECTED PUSH: 0xFFFFFFFFFFFFF000
+LUI x29, 0xFFFFF        # bit 31 of 32-bit result is set, so sign-extends to 0xFFFFFFFFFFFFF000
 ADDI sp, sp, -8
 SD x29, 0(sp)
 
@@ -799,10 +799,10 @@ ADDI sp, sp, -8
 SD x30, 0(sp)
 
 # TEST: Negative LUI combined with ADDI
-# CONTEXT: Building negative constants
-# EXPECTED PUSH: 0x00000000FFFFE678
+# CONTEXT: Building negative constants; LUI sign-extends, upper 32 bits are 0xFFFFFFFF
+# EXPECTED PUSH: 0xFFFFFFFFFFFFE678
 LUI x29, 0xFFFFE
-ADDI x30, x29, 0x678    # x30 = 0xFFFFE000 + 0x678 = 0xFFFFE678 (upper 32 bits remain 0)
+ADDI x30, x29, 0x678    # x30 = 0xFFFFFFFFFFFFE000 + 0x678 = 0xFFFFFFFFFFFFE678
 ADDI sp, sp, -8
 SD x30, 0(sp)
 
