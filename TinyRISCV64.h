@@ -103,7 +103,7 @@ public:
 	u64 program_load(const u8* const prog, size_t prog_size)
 	{
 		if (prog_size > max_prog_size)
-			throw std::invalid_argument("Program too large (max " + std::to_string(max_prog_size) + " bytes)");
+			throw std::invalid_argument(std::format("Program too large (max {} bytes)", max_prog_size));
 		program.resize(prog_size);
 		std::memcpy(program.data(), prog, prog_size);
 		reset();
@@ -211,7 +211,7 @@ private:
 
 		size_t size = fin.tellg();
 		if (size > max_size)
-			throw std::invalid_argument("Program too large (max "+std::to_string(max_size)+")");
+			throw std::invalid_argument(std::format("Program too large (max {})", max_size));
 
 		fin.seekg(0, std::ios::beg);
 		std::vector<u8> prog(size);
@@ -563,14 +563,13 @@ private:
 			case 0x10200073: // SRET
 			case 0x00200073: // URET
 				throw std::runtime_error(
-				    "Privilege-mode return instruction (MRET/SRET/URET, inst=0x" +
-				    std::format("{:x}", inst) + ") at pc=0x" + std::format("{:x}", pc - 4) +
-				    ": this VM has no privilege levels");
+				    std::format("Privilege-mode return instruction (MRET/SRET/URET, inst=0x{:x}) at pc=0x{:x}: this VM has no privilege levels",
+				    inst, pc - 4));
 
 			default:
 				throw std::invalid_argument(
-				    "Unknown SYSTEM instruction 0x" + std::format("{:x}", inst) +
-				    " at pc=0x" + std::format("{:x}", pc - 4));
+				    std::format("Unknown SYSTEM instruction 0x{:x} at pc=0x{:x}",
+				    inst, pc - 4));
 		}
 	}
 
@@ -603,7 +602,7 @@ private:
 			case 228: // mbind
 				//FIXME: can we just return a fail code instead of throwing?
 				throw std::runtime_error(
-				    "ecall " + std::to_string(num) + ": MMU / paging operation not supported");
+				    std::format("ecall {}: MMU / paging operation not supported", num));
 
 			// ----- file system / I/O ------------------------------------------
 			case 56:  // openat(dirfd, path, flags, mode)
@@ -619,7 +618,7 @@ private:
 				//  that way host can handle stdio
 				//The remainder could probably return failure codes
 				throw std::runtime_error(
-				    "ecall " + std::to_string(num) + ": file system and I/O operations are not supported");
+				    std::format("ecall {}: file system and I/O operations are not supported", num));
 
 			case 160: // uname(buf)
 				//FIXME: just return something... is there a code for bare metal?
@@ -636,9 +635,9 @@ private:
 			case 113: // clock_gettime
 			case 169: // gettimeofday
 				throw std::runtime_error(
-				    "ecall " + std::to_string(num) + " (clock/time): "
+				    std::format("ecall {} (clock/time): "
 				    "real-time clock is not available in this VM; "
-				    "pass timing information in via registers or data memory");
+				    "pass timing information in via registers or data memory", num));
 
 			//FIXME: some, if not all of these could just NOP and/or return a failure code?
 			case 174: // getuid
@@ -657,11 +656,8 @@ private:
 			// ----- catch-all --------------------------------------------------
 			default:
 				throw std::runtime_error(
-				    "ecall: unsupported syscall number " + std::to_string(num) +
-				    " (a0=" + std::to_string(a0) +
-				    ", a1=0x" + std::format("{:x}", a1) +
-				    ", a2=" + std::to_string(a2) +
-				    ") at pc=0x" + std::format("{:x}", pc - 4));
+				    std::format("ecall: unsupported syscall number {} (a0={}, a1=0x{:x}, a2={}) at pc=0x{:x}",
+				    num, a0, a1, a2, pc - 4));
 		}
 	}
 
@@ -670,11 +666,11 @@ private:
 		// ----- read entire file ------------------------------------------------
 		std::ifstream fin(filename, std::ios::binary | std::ios::ate);
 		if (!fin)
-			throw std::invalid_argument("Failed to open ELF file: " + filename);
+			throw std::invalid_argument(std::format("Failed to open ELF file: {}", filename));
 
 		const size_t file_size = static_cast<size_t>(fin.tellg());
 		if (file_size < sizeof(Elf64Ehdr))
-			throw std::invalid_argument("File too small to be a valid ELF64 binary: " + filename);
+			throw std::invalid_argument(std::format("File too small to be a valid ELF64 binary: {}", filename));
 
 		fin.seekg(0, std::ios::beg);
 		std::vector<u8> file_data(file_size);
@@ -692,26 +688,25 @@ private:
 		// 64-bit class
 		if (ehdr.e_ident[4] != 2 /*ELFCLASS64*/)
 			throw std::invalid_argument(
-			    std::string("ELF is ") + (ehdr.e_ident[4] == 1 ? "32-bit" : "unknown class") +
-			    "; recompile with riscv64-unknown-elf-gcc (EI_CLASS=" +
-			    std::to_string(ehdr.e_ident[4]) + ")");
+			    std::format("ELF is {}; recompile with riscv64-unknown-elf-gcc (EI_CLASS={})",
+			    (ehdr.e_ident[4] == 1 ? "32-bit" : "unknown class"), ehdr.e_ident[4]));
 
 		// Little-endian
 		if (ehdr.e_ident[5] != 1 /*ELFDATA2LSB*/)
 			throw std::invalid_argument(
-			    "ELF is big-endian; ensure the target triple is riscv64 (EI_DATA=" +
-			    std::to_string(ehdr.e_ident[5]) + ")");
+			    std::format("ELF is big-endian; ensure the target triple is riscv64 (EI_DATA={})",
+			    ehdr.e_ident[5]));
 
 		// ELF version
 		if (ehdr.e_ident[6] != 1 /*EV_CURRENT*/)
 			throw std::invalid_argument(
-			    "Unknown ELF version (EI_VERSION=" + std::to_string(ehdr.e_ident[6]) + ")");
+			    std::format("Unknown ELF version (EI_VERSION={})", ehdr.e_ident[6]));
 
 		// RISC-V architecture
 		if (ehdr.e_machine != 0xF3 /*EM_RISCV*/)
 			throw std::invalid_argument(
-			    "Not a RISC-V ELF (e_machine=0x" + std::format("{:x}", ehdr.e_machine) +
-			    "); recompile targeting riscv64 (e.g. riscv64-unknown-elf-gcc)");
+			    std::format("Not a RISC-V ELF (e_machine=0x{:x}); recompile targeting riscv64 (e.g. riscv64-unknown-elf-gcc)",
+			    ehdr.e_machine));
 
 		// Executable type
 		if (ehdr.e_type == 3 /*ET_DYN*/)
@@ -720,8 +715,8 @@ private:
 			    "relink as a static executable with -static -no-pie");
 		if (ehdr.e_type != 2 /*ET_EXEC*/)
 			throw std::invalid_argument(
-			    "ELF is not an executable (e_type=" + std::to_string(ehdr.e_type) +
-			    "); expected ET_EXEC (2)");
+			    std::format("ELF is not an executable (e_type={}); expected ET_EXEC (2)",
+			    ehdr.e_type));
 
 		// RISC-V ISA / ABI flags
 		constexpr u32 EF_RISCV_RVC            = 0x0001;
@@ -730,22 +725,23 @@ private:
 
 		if (ehdr.e_flags & EF_RISCV_FLOAT_ABI_MASK)
 			throw std::invalid_argument(
-			    "ELF uses a hardware floating-point ABI (e_flags=0x" + std::format("{:x}", ehdr.e_flags) +
-			    "); this VM implements RV64IM (integer only). "
-			    "Recompile with -march=rv64im -mabi=lp64");
+			    std::format("ELF uses a hardware floating-point ABI (e_flags=0x{:x}); "
+			    "this VM implements RV64IM (integer only). "
+			    "Recompile with -march=rv64im -mabi=lp64", ehdr.e_flags));
 
 		if (ehdr.e_flags & EF_RISCV_RVC)
 			throw std::invalid_argument(
-			    "ELF contains RISC-V Compressed (C) extension instructions "
-			    "(EF_RISCV_RVC set in e_flags=0x" + std::format("{:x}", ehdr.e_flags) + "); "
+			    std::format("ELF contains RISC-V Compressed (C) extension instructions "
+			    "(EF_RISCV_RVC set in e_flags=0x{:x}); "
 			    "this VM only handles 32-bit instructions. "
-			    "Recompile with -march=rv64im (omit 'c' from the march string) or add -mno-rvc");
+			    "Recompile with -march=rv64im (omit 'c' from the march string) or add -mno-rvc",
+			    ehdr.e_flags));
 
 		if (ehdr.e_flags & EF_RISCV_RVE)
 			throw std::invalid_argument(
-			    "ELF uses the RV32E reduced (16-register) integer ABI "
-			    "(EF_RISCV_RVE in e_flags=0x" + std::format("{:x}", ehdr.e_flags) + "); "
-			    "recompile targeting riscv64");
+			    std::format("ELF uses the RV32E reduced (16-register) integer ABI "
+			    "(EF_RISCV_RVE in e_flags=0x{:x}); "
+			    "recompile targeting riscv64", ehdr.e_flags));
 
 		// Program header table
 		if (ehdr.e_phoff == 0 || ehdr.e_phnum == 0)
@@ -755,9 +751,8 @@ private:
 
 		if (ehdr.e_phentsize < sizeof(Elf64Phdr))
 			throw std::invalid_argument(
-			    "ELF program header entry size too small (e_phentsize=" +
-			    std::to_string(ehdr.e_phentsize) + "; expected >= " +
-			    std::to_string(sizeof(Elf64Phdr)) + ")");
+			    std::format("ELF program header entry size too small (e_phentsize={}; expected >= {})",
+			    ehdr.e_phentsize, sizeof(Elf64Phdr)));
 
 		const u64 phtab_end = ehdr.e_phoff + static_cast<u64>(ehdr.e_phnum) * ehdr.e_phentsize;
 		if (phtab_end > file_size)
@@ -784,15 +779,12 @@ private:
 				{
 					if (phdr.p_filesz > phdr.p_memsz)
 						throw std::invalid_argument(
-						    "ELF PT_LOAD segment[" + std::to_string(i) +
-						    "]: p_filesz (" + std::to_string(phdr.p_filesz) +
-						    ") > p_memsz (" + std::to_string(phdr.p_memsz) +
-						    ") — malformed ELF");
+						    std::format("ELF PT_LOAD segment[{}]: p_filesz ({}) > p_memsz ({}) — malformed ELF",
+						    i, phdr.p_filesz, phdr.p_memsz));
 
 					if (phdr.p_offset + phdr.p_filesz > file_size)
 						throw std::invalid_argument(
-						    "ELF PT_LOAD segment[" + std::to_string(i) +
-						    "] file data extends beyond end of file");
+						    std::format("ELF PT_LOAD segment[{}] file data extends beyond end of file", i));
 
 					vaddr_min = std::min(vaddr_min, phdr.p_vaddr);
 					vaddr_max = std::max(vaddr_max, phdr.p_vaddr + phdr.p_memsz);
@@ -820,10 +812,9 @@ private:
 		// Size check
 		if (vaddr_max > max_size)
 			throw std::invalid_argument(
-			    "ELF virtual address span [0x" + std::format("{:x}", vaddr_min) +
-			    ", 0x" + std::format("{:x}", vaddr_max) + ") requires " +
-			    std::to_string(vaddr_max) + " bytes which exceeds max_program_size=" +
-			    std::to_string(max_size) + "; construct the VM with a larger max_program_size");
+			    std::format("ELF virtual address span [0x{:x}, 0x{:x}) requires {} bytes which exceeds max_program_size={}; "
+			    "construct the VM with a larger max_program_size",
+			    vaddr_min, vaddr_max, vaddr_max, max_size));
 
 		// Entry point sanity
 		if (ehdr.e_entry == 0)
@@ -833,10 +824,9 @@ private:
 
 		if (ehdr.e_entry < vaddr_min || ehdr.e_entry >= vaddr_max)
 			throw std::invalid_argument(
-			    "ELF entry point 0x" + std::format("{:x}", ehdr.e_entry) +
-			    " lies outside the loaded virtual address range [0x" +
-			    std::format("{:x}", vaddr_min) + ", 0x" + std::format("{:x}", vaddr_max) +
-			    "); the binary may not have been linked correctly");
+			    std::format("ELF entry point 0x{:x} lies outside the loaded virtual address range [0x{:x}, 0x{:x}); "
+			    "the binary may not have been linked correctly",
+			    ehdr.e_entry, vaddr_min, vaddr_max));
 
 		// ----- second pass: populate program image ----------------------------
 		// Allocate zeroed image covering [0, vaddr_max).
