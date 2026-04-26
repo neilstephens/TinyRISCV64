@@ -43,6 +43,10 @@
 #include <cstring>
 #include <array>
 #include <format>
+#include <iostream>
+#include <random>
+#include <unordered_map>
+#include <memory>
 
 namespace TinyRISCV64
 {
@@ -66,6 +70,9 @@ private:
 	std::span<u8> data;        // Data memory
 	bool halted{false};        // Program exited
 	const size_t max_prog_size;// Maximum allowed program image size (bytes)
+
+	// File-descriptor → iostream mapping (populated via map_fd)
+	std::unordered_map<u64, std::shared_ptr<std::iostream>> fd_streams;
 
 	// Virtual addressing:
 	static constexpr
@@ -200,6 +207,15 @@ public:
 		s_end = program.size()+64+data.size()+64+stack.size();
 	}
 
+	// Map a host iostream to a guest file descriptor number.
+	// Typical use: map fds 0/1/2 for stdin/stdout/stderr before calling execute_program.
+	// The read, write, close, and lseek ecalls are dispatched through this map;
+	// all other file-system ecalls (openat, fstat, …) return -ENOSYS.
+	void map_fd(const u64 fd, std::shared_ptr<std::iostream> stream)
+	{
+		fd_streams[fd] = std::move(stream);
+	}
+
 private:
 
 	// Load program from file
@@ -263,7 +279,7 @@ private:
 			case 0x33: exec_alu_reg(funct3, funct7, rd, rs1, rs2); break;            // ALU register
 			case 0x3b: exec_alu_reg32(funct3, funct7, rd, rs1, rs2); break;          // ALU register 32-bit
 			case 0x0f: break;                                                        // FENCE (nop)
-			case 0x73: exec_system(inst, funct3); break;                             // SYSTEM
+			case 0x73: exec_system(inst, funct3, funct7, rd, rs1, rs2, imm_i); break;// SYSTEM
 			default: throw std::invalid_argument("Unknown opcode");
 		}
 	}
@@ -535,12 +551,11 @@ private:
 	#endif
 
 	// SYSTEM instruction dispatch (opcode 0x73)
-	void exec_system(const u32 inst, const u8 funct3)
+	void exec_system(u32 inst, u8 funct3, u8 funct7, u8 rd, u8 rs1, u8 rs2, i32 imm)
 	{
 		if (funct3 != 0)
 		{
-			// CSR instructions (CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI)
-			//FIXME: should probably put something in rd for some of the reads (time, cycle, ...)
+			handle_csr(inst,funct3,funct7,rd,rs1,rs2,imm);
 			return;
 		}
 
@@ -548,11 +563,11 @@ private:
 		{
 			case 0x00000073: // ECALL
 				handle_ecall();
-				break;
+				return;
 
 			case 0x00100073: // EBREAK
 				halted = true;
-				break;
+				return;
 
 			case 0x10500073: // WFI  (wait for interrupt)
 				throw std::runtime_error(
@@ -571,6 +586,14 @@ private:
 				    std::format("Unknown SYSTEM instruction 0x{:x} at pc=0x{:x}",
 				    inst, pc - 4));
 		}
+	}
+
+	// CSR instructions (CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI)
+	void handle_csr(u32 inst, u8 funct3, u8 funct7, u8 rd, u8 rs1, u8 rs2, i32 imm)
+	{
+		// Stub: All CSRs read as 0; write side-effects are ignored
+		if (rd != 0)
+			x[rd] = 0;
 	}
 
 	// ECALL (syscall) stubs
@@ -600,59 +623,107 @@ private:
 			case 216: // remap_file_pages
 			case 219: // mlock
 			case 228: // mbind
-				//FIXME: can we just return a fail code instead of throwing?
-				throw std::runtime_error(
-				    std::format("ecall {}: MMU / paging operation not supported", num));
+			// MMU / paging operations are not supported; return -ENOSYS so the
+			// caller can handle the failure rather than crashing the VM
+			x[10] = static_cast<u64>(-38LL); // -ENOSYS
+			return;
 
 			// ----- file system / I/O ------------------------------------------
-			case 56:  // openat(dirfd, path, flags, mode)
 			case 57:  // close(fd)
+			{
+				fd_streams.erase(a0);
+				x[10] = 0;
+				return;
+			}
 			case 62:  // lseek(fd, offset, whence)
+			{
+				auto it = fd_streams.find(a0);
+				if (it == fd_streams.end()) { x[10] = static_cast<u64>(-9LL); return; } // -EBADF
+				const std::ios_base::seekdir dirs[] = {std::ios_base::beg, std::ios_base::cur, std::ios_base::end};
+				if (a2 > 2) { x[10] = static_cast<u64>(-22LL); return; } // -EINVAL
+				auto& s = *it->second;
+				s.seekg(static_cast<std::streamoff>(static_cast<i64>(a1)), dirs[a2]);
+				s.seekp(static_cast<std::streamoff>(static_cast<i64>(a1)), dirs[a2]);
+				x[10] = s ? static_cast<u64>(s.tellg()) : static_cast<u64>(-29LL); // -ESPIPE
+				return;
+			}
 			case 63:  // read(fd, buf, count)
+			{
+				auto it = fd_streams.find(a0);
+				if (it == fd_streams.end()) { x[10] = static_cast<u64>(-9LL); return; } // -EBADF
+				std::vector<char> buf(a2);
+				it->second->read(buf.data(), static_cast<std::streamsize>(a2));
+				const u64 n = static_cast<u64>(it->second->gcount());
+				for (u64 i = 0; i < n; ++i)
+					mem_store<u8>(a1 + i, static_cast<u8>(buf[i]));
+				x[10] = n;
+				return;
+			}
 			case 64:  // write(fd, buf, count)
+			{
+				auto it = fd_streams.find(a0);
+				if (it == fd_streams.end()) { x[10] = static_cast<u64>(-9LL); return; } // -EBADF
+				std::vector<char> buf(a2);
+				for (u64 i = 0; i < a2; ++i)
+					buf[i] = static_cast<char>(mem_load<u8>(a1 + i));
+				it->second->write(buf.data(), static_cast<std::streamsize>(a2));
+				x[10] = it->second->good() ? a2 : static_cast<u64>(-5LL); // -EIO
+				return;
+			}
+			case 56:  // openat — requires a virtual filesystem; not supported
 			case 65:  // readv
 			case 66:  // writev
-			case 79:  // fstatat / newfstatat
+			case 79:  // fstatat
 			case 80:  // fstat
-				//FIXME: add public methods to register callbacks for file descriptor ops
-				//  that way host can handle stdio
-				//The remainder could probably return failure codes
-				throw std::runtime_error(
-				    std::format("ecall {}: file system and I/O operations are not supported", num));
+				x[10] = static_cast<u64>(-38LL); // -ENOSYS
+				return;
 
 			case 160: // uname(buf)
-				//FIXME: just return something... is there a code for bare metal?
-				throw std::runtime_error(
-				    "ecall uname (160): OS identification is not available in this VM");
+				x[10] = static_cast<u64>(-38LL); // -ENOSYS — no OS identity on 'bare metal'
+				return;
 
 			case 278: // getrandom(buf, count, flags)
-				//FIXME: this should be doable
-				throw std::runtime_error(
-				    "ecall getrandom (278): random number generation is not supported; "
-				    "seed your PRNG from a deterministic value or pass entropy in via data memory");
+			{
+				// flags (a2) are ignored — always behaves as a blocking, non-random-pool read
+				std::random_device rng;
+				const u64 count = a1;
+				for (u64 i = 0; i < count; ++i)
+					mem_store<u8>(a0 + i, static_cast<u8>(rng()));
+				x[10] = count; // return number of bytes written
+				return;
+			}
 
 			// ----- time -------------------------------------------------------
 			case 113: // clock_gettime
 			case 169: // gettimeofday
-				throw std::runtime_error(
-				    std::format("ecall {} (clock/time): "
-				    "real-time clock is not available in this VM; "
-				    "pass timing information in via registers or data memory", num));
+				x[10] = static_cast<u64>(-22);// -EINVAL;
+				return;
 
-			//FIXME: some, if not all of these could just NOP and/or return a failure code?
 			case 174: // getuid
 			case 175: // geteuid
 			case 176: // getgid
 			case 177: // getegid
-			case 261: // prlimit64
+				x[10] = 0; // report as root on bare metal
+				return;
+
 			case 96:  // set_tid_address
+				x[10] = 1; // return a fake TID
+				return;
+
 			case 99:  // set_robust_list
 			case 100: // get_robust_list
-			case 220: // clone
-			case 221: // execve
+			case 261: // prlimit64
 			case 132: // sigaltstack
 			case 134: // rt_sigaction
 			case 135: // rt_sigprocmask
+				x[10] = 0; // NOP — return success
+				return;
+
+			case 220: // clone
+			case 221: // execve
+				x[10] = static_cast<u64>(-38LL); // -ENOSYS — multi-process not supported
+				return;
+
 			// ----- catch-all --------------------------------------------------
 			default:
 				throw std::runtime_error(
