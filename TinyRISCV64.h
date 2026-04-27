@@ -462,71 +462,6 @@ protected:
 		x[rd] = static_cast<i64>(result); // Sign-extend to 64 bits
 	}
 
-	// For 128-bit multiplication - TODO: use platform intrinsics (_umul128 on MSVC and __int128 specifically for GCC/Clang)
-	#if defined(__SIZEOF_INT128__)
-	using i128 = __int128; using u128 = unsigned __int128;
-	static inline uint64_t mulh(i64 a, i64 b) { return (static_cast<i128>(a) * static_cast<i128>(b)) >> 64; }
-	static inline uint64_t mulhu(u64 a, u64 b) { return (static_cast<u128>(a) * static_cast<u128>(b)) >> 64; }
-	static inline uint64_t mulhsu(i64 a, u64 b) { return (static_cast<i128>(a) * static_cast<u128>(b)) >> 64; }
-	#else
-	//Provide emulation on platforms without __int128
-	static inline std::pair<u64,u64> mulu64_128(u64 a, u64 b)
-	{
-		constexpr u64 TRUNC32 = 0xFFFFFFFFULL;
-		const u64 a_lo = a & TRUNC32;
-		const u64 a_hi = a >> 32;
-		const u64 b_lo = b & TRUNC32;
-		const u64 b_hi = b >> 32;
-
-		u64 p0 = a_lo * b_lo;
-		u64 p1 = a_lo * b_hi;
-		u64 p2 = a_hi * b_lo;
-		u64 p3 = a_hi * b_hi;
-
-		u64 mid = (p0 >> 32) + (p1 & TRUNC32) + (p2 & TRUNC32);
-		u64 lo = (p0 & TRUNC32) | (mid << 32);
-		u64 hi = p3 + (p1 >> 32) + (p2 >> 32) + (mid >> 32);
-
-		return {hi, lo};
-	}
-	static inline i64 mulh(i64 a, i64 b)
-	{
-		bool neg = (a < 0) ^ (b < 0);
-		u64 abs_a = (a < 0) ? (0ULL - static_cast<u64>(a)) : static_cast<u64>(a);
-		u64 abs_b = (b < 0) ? (0ULL - static_cast<u64>(b)) : static_cast<u64>(b);
-
-		auto [hi, lo] = mulu64_128(abs_a, abs_b);
-
-		if (neg) //2's compliment
-		{
-			hi = ~hi;
-			lo = ~lo;
-			lo += 1;
-			if (lo == 0) ++hi;
-		}
-		return static_cast<i64>(hi);
-	}
-	static inline i64 mulhsu(i64 a, u64 b)
-	{
-		if(a < 0)
-		{
-			u64 abs_a = 0ULL - static_cast<u64>(a);
-
-			auto [hi, lo] = mulu64_128(abs_a, b);
-
-			//2's compliment
-			hi = ~hi;
-			lo = ~lo;
-			lo += 1;
-			if (lo == 0) ++hi;
-
-			return static_cast<i64>(hi);
-		}
-		return mulu64_128(static_cast<u64>(a),b).first;
-	}
-	static inline uint64_t mulhu(u64 a, u64 b){ return mulu64_128(a,b).first; }
-	#endif
-
 	// SYSTEM instruction dispatch (opcode 0x73)
 	void exec_system(u32 inst, u8 funct3, u8 funct7, u8 rd, u8 rs1, u8 rs2, i32 imm)
 	{
@@ -600,6 +535,71 @@ protected:
 		    "implement handle_ecall() to support system calls",
 		    pc - 4));
 	}
+
+	// For 128-bit multiplication - TODO: use platform intrinsics (_umul128 on MSVC and __int128 specifically for GCC/Clang)
+	#if defined(__SIZEOF_INT128__)
+	using i128 = __int128; using u128 = unsigned __int128;
+	static inline uint64_t mulh(i64 a, i64 b) { return (static_cast<i128>(a) * static_cast<i128>(b)) >> 64; }
+	static inline uint64_t mulhu(u64 a, u64 b) { return (static_cast<u128>(a) * static_cast<u128>(b)) >> 64; }
+	static inline uint64_t mulhsu(i64 a, u64 b) { return (static_cast<i128>(a) * static_cast<u128>(b)) >> 64; }
+	#else
+	//Provide emulation on platforms without __int128
+	static inline std::pair<u64,u64> mulu64_128(u64 a, u64 b)
+	{
+		constexpr u64 TRUNC32 = 0xFFFFFFFFULL;
+		const u64 a_lo = a & TRUNC32;
+		const u64 a_hi = a >> 32;
+		const u64 b_lo = b & TRUNC32;
+		const u64 b_hi = b >> 32;
+
+		u64 p0 = a_lo * b_lo;
+		u64 p1 = a_lo * b_hi;
+		u64 p2 = a_hi * b_lo;
+		u64 p3 = a_hi * b_hi;
+
+		u64 mid = (p0 >> 32) + (p1 & TRUNC32) + (p2 & TRUNC32);
+		u64 lo = (p0 & TRUNC32) | (mid << 32);
+		u64 hi = p3 + (p1 >> 32) + (p2 >> 32) + (mid >> 32);
+
+		return {hi, lo};
+	}
+	static inline i64 mulh(i64 a, i64 b)
+	{
+		bool neg = (a < 0) ^ (b < 0);
+		u64 abs_a = (a < 0) ? (0ULL - static_cast<u64>(a)) : static_cast<u64>(a);
+		u64 abs_b = (b < 0) ? (0ULL - static_cast<u64>(b)) : static_cast<u64>(b);
+
+		auto [hi, lo] = mulu64_128(abs_a, abs_b);
+
+		if (neg) //2's compliment
+		{
+			hi = ~hi;
+			lo = ~lo;
+			lo += 1;
+			if (lo == 0) ++hi;
+		}
+		return static_cast<i64>(hi);
+	}
+	static inline i64 mulhsu(i64 a, u64 b)
+	{
+		if(a < 0)
+		{
+			u64 abs_a = 0ULL - static_cast<u64>(a);
+
+			auto [hi, lo] = mulu64_128(abs_a, b);
+
+			//2's compliment
+			hi = ~hi;
+			lo = ~lo;
+			lo += 1;
+			if (lo == 0) ++hi;
+
+			return static_cast<i64>(hi);
+		}
+		return mulu64_128(static_cast<u64>(a),b).first;
+	}
+	static inline uint64_t mulhu(u64 a, u64 b){ return mulu64_128(a,b).first; }
+	#endif
 };
 
 } // namespace TinyRISCV64
