@@ -107,6 +107,12 @@ int run_elf(TinyRISCV64::ElfVM& vm, const char* data_file, TinyRISCV64::u64 entr
 		vm.execute_program(entry_point,0xFFFFFFFFFFFFFFFFUL);
 		const std::string vm_output = pOutStream->str();
 
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
+		pDataStream->close();
+		char sha_hex[129];
+		if(!get_sha512_lowercase(data_file, sha_hex, sizeof(sha_hex)))
+			throw std::runtime_error("Failed to compute SHA-512 hash of data file natively on host");
+#else
 		//reset the file stream
 		pDataStream->clear();
 		pDataStream->seekg(0, std::ios::beg);
@@ -121,6 +127,7 @@ int run_elf(TinyRISCV64::ElfVM& vm, const char* data_file, TinyRISCV64::u64 entr
 		}while(pDataStream->gcount() > 0);
 		char sha_hex[SHA512_HEX_SIZE];
 		sha512_finalize_hex(&sha, sha_hex);
+#endif
 		const std::string native_output(sha_hex);
 
 		if(vm_output != native_output)

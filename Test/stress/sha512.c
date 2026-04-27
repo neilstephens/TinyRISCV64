@@ -1,3 +1,45 @@
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
+
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+
+int get_sha512_lowercase(const char *path, char *out, size_t out_size)
+{
+    char cmd[512];
+
+    /* Build PowerShell command safely */
+    snprintf(
+	  cmd, sizeof(cmd),
+	  "powershell -NoProfile -Command "
+	  "\"(Get-FileHash '%s' -Algorithm SHA512).Hash.ToLower()\"",
+	  path
+    );
+
+    FILE *pipe = _popen(cmd, "r");
+    if (!pipe)
+	  return 0;
+
+    if (!fgets(out, (int)out_size, pipe))
+    {
+	  _pclose(pipe);
+	  return 0;
+    }
+
+    _pclose(pipe);
+
+    /* Trim trailing whitespace */
+    size_t len = strlen(out);
+    while (len > 0 && isspace((unsigned char)out[len - 1]))
+    {
+	  out[--len] = '\0';
+    }
+
+    return 1;
+}
+
+#else //not windows
+
 //Start: Code taken from https://gist.github.com/shibatch/238c618a027f67935926df9d1149a677
 //========================================================================================
 
@@ -239,3 +281,5 @@ int main(int argc, char** argv)
 }
 
 #endif //NO_SHA512SUM_MAIN
+
+#endif //not windows
