@@ -91,7 +91,7 @@ int run_elf(TinyRISCV64::ElfVM& vm, const char* data_file, TinyRISCV64::u64 entr
 	try
 	{
 		//map input fd
-		auto pDataStream = std::make_shared<std::fstream>(data_file,std::ios::in);
+		auto pDataStream = std::make_shared<std::fstream>(data_file,std::ios::in | std::ios::binary);
 		if (!pDataStream || pDataStream->fail())
 			throw std::invalid_argument("Failed to open data file: " + std::string(data_file));
 		vm.map_fd(41,pDataStream);
