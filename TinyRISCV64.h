@@ -79,7 +79,7 @@ protected:
 	u64 s_end;       // Stack mem end
 
 public:
-	VM(const size_t stack_size = 4096, const size_t max_program_size = 1024*1024)
+	VM(const size_t stack_size = 4096, const size_t max_program_size = 1024UL*1024)
 		: stack(stack_size), max_prog_size(max_program_size) { reset(); }
 
 	// Load program from file and return the virtual start addr

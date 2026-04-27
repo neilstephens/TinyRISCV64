@@ -53,7 +53,7 @@ private:
 	std::unordered_map<u64, std::shared_ptr<std::iostream>> fd_streams;
 
 public:
-	ElfVM(const size_t stack_size = 4096, const size_t max_program_size = 1024*1024)
+	ElfVM(const size_t stack_size = 4096, const size_t max_program_size = 1024UL*1024)
 		: VM(stack_size,max_program_size) {}
 
 	// Load program from elf file and return the entry_point addr
