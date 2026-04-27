@@ -71,7 +71,7 @@ private:
 	bool halted{false};        // Program exited
 	const size_t max_prog_size;// Maximum allowed program image size (bytes)
 
-	// File-descriptor → iostream mapping (populated via map_fd)
+	// File-descriptor to iostream mapping (populated via map_fd)
 	std::unordered_map<u64, std::shared_ptr<std::iostream>> fd_streams;
 
 	// Virtual addressing:
@@ -566,8 +566,20 @@ private:
 				return;
 
 			case 0x00100073: // EBREAK
-				halted = true;
+			{
+				// Check for the semihosting magic bracket:
+				//   slli zero,zero,0x1f  (0x01f01013)  <-- instruction before ebreak
+				//   ebreak
+				//   srai zero,zero,0x7   (0x40705013)  <-- instruction after ebreak
+				// pc is already advanced past the ebreak at this point.
+				const bool has_prev = (pc >= 8) && mem_load<u32>(pc - 8) == 0x01f01013u;
+				const bool has_next = (pc + 3 < p_end) && mem_load<u32>(pc) == 0x40705013u;
+				if (has_prev && has_next)
+					handle_semihost();
+				else
+					halted = true;
 				return;
+			}
 
 			case 0x10500073: // WFI  (wait for interrupt)
 				throw std::runtime_error(
@@ -594,6 +606,207 @@ private:
 		// Stub: All CSRs read as 0; write side-effects are ignored
 		if (rd != 0)
 			x[rd] = 0;
+	}
+
+	// Read a null-terminated string from guest memory
+	std::string mem_read_str(u64 addr)
+	{
+	    std::string s;
+	    for (;;)
+	    {
+		  const char c = static_cast<char>(mem_load<u8>(addr++));
+		  if (c == '\0') break;
+		  s += c;
+	    }
+	    return s;
+	}
+
+	void handle_semihost()
+	{
+	    const u64 op  = x[10]; // a0 — semihosting operation
+	    const u64 arg = x[11]; // a1 — pointer to argument block in guest memory
+
+	    // Helper: read word N from the argument block
+	    auto argv = [&](size_t n) { return mem_load<u64>(arg + n * 8); };
+
+	    switch (op)
+	    {
+		  case 0x01: // SYS_OPEN(path_ptr, mode, path_len)
+		  {
+			const std::string path = mem_read_str(argv(0));
+			const u64 mode = argv(1);
+
+			// Special names map to the pre-existing stdio fds
+			if (path == ":tt")
+			{
+				if(mode < 4)
+					x[10] = 0; //stdin
+				else if(mode < 8)
+					x[10] = 1; //stdout
+				else if(mode < 12)
+					x[10] = 2; //stderr
+				else
+					x[10] = static_cast<u64>(-1LL);
+			    return;
+			}
+
+			//No support for real files
+			x[10] = static_cast<u64>(-1LL);
+			return;
+		  }
+
+		  case 0x02: // SYS_CLOSE(fd)
+		  {
+			const u64 fd = argv(0);
+			fd_streams.erase(fd);
+			x[10] = 0;
+			return;
+		  }
+
+		  case 0x03: // SYS_WRITEC(char_ptr) — write one character to stdout
+		  {
+			const char c = static_cast<char>(mem_load<u8>(arg));
+			auto it = fd_streams.find(1);
+			if (it != fd_streams.end())
+			    it->second->put(c);
+			x[10] = 0;
+			return;
+		  }
+
+		  case 0x04: // SYS_WRITE0(str_ptr) — write null-terminated string to stdout
+		  {
+			const std::string s = mem_read_str(arg);
+			auto it = fd_streams.find(1);
+			if (it != fd_streams.end())
+			    *it->second << s;
+			x[10] = 0;
+			return;
+		  }
+
+		  case 0x05: // SYS_WRITE(fd, buf_ptr, len) — returns bytes NOT written (0 = success)
+		  {
+			const u64 fd  = argv(0);
+			const u64 buf = argv(1);
+			u64 len = argv(2);
+
+			auto it = fd_streams.find(fd);
+			if (it == fd_streams.end())
+			{
+				x[10] = len; // nothing written
+				return;
+			}
+
+			size_t i = 0;
+			while(len > 0 && it->second->good())
+			{
+			    it->second->put(static_cast<char>(mem_load<u8>(buf + i++)));
+			    len = it->second->good() ? len-1 : len;
+			}
+
+			x[10] = len;
+			return;
+		  }
+
+		  case 0x06: // SYS_READ(fd, buf_ptr, len) — returns bytes NOT read (0 = success, len = EOF)
+		  {
+			const u64 fd  = argv(0);
+			const u64 buf = argv(1);
+			const u64 len = argv(2);
+
+			auto it = fd_streams.find(fd);
+			if (it == fd_streams.end())
+			{
+				x[10] = len;
+				return;
+			}
+
+			std::vector<char> tmp(len);
+			it->second->read(tmp.data(), static_cast<std::streamsize>(len));
+			const u64 n = static_cast<u64>(it->second->gcount());
+			for (u64 i = 0; i < n; ++i)
+			    mem_store<u8>(buf + i, static_cast<u8>(tmp[i]));
+
+			x[10] = len - n; // bytes NOT read
+			return;
+		  }
+
+		  case 0x07: // SYS_READC — read one character from stdin
+		  {
+			auto it = fd_streams.find(0);
+			if (it != fd_streams.end())
+			{
+				auto c = it->second->get();
+				if (!it->second->eof() && !it->second->fail())
+				{
+					x[10] = static_cast<u64>(c);
+					return;
+				}
+			}
+			//Failure isn't an option in the spec; make something up
+			x[10] = 0xFFFFFFFFFFFFFF04UL; //-1LL & ASCII_EOT
+			return;
+		  }
+
+		  case 0x09: // SYS_ISTTY(fd)
+		  {
+			const u64 fd = argv(0);
+			x[10] = (fd <= 2) ? 1 : 0;
+			return;
+		  }
+
+		  case 0x0a: // SYS_SEEK(fd, offset)
+		  {
+			const u64 fd  = argv(0);
+			const i64 off = static_cast<i64>(argv(1));
+			auto it = fd_streams.find(fd);
+			if (it == fd_streams.end()) { x[10] = static_cast<u64>(-1LL); return; }
+			it->second->seekg(off, std::ios_base::beg);
+			it->second->seekp(off, std::ios_base::beg);
+			x[10] = it->second->good() ? 0 : static_cast<u64>(-1LL);
+			return;
+		  }
+
+		  case 0x0c: // SYS_FLEN(fd)
+		  {
+			const u64 fd = argv(0);
+			auto it = fd_streams.find(fd);
+			if (it == fd_streams.end()) { x[10] = static_cast<u64>(-1LL); return; }
+			auto& s = *it->second;
+			const std::streampos cur = s.tellg();
+			s.seekg(0, std::ios_base::end);
+			const u64 len = static_cast<u64>(s.tellg());
+			s.seekg(cur, std::ios_base::beg);
+			x[10] = len;
+			return;
+		  }
+
+		  case 0x11: // SYS_TIME — seconds since epoch
+		  {
+			x[10] = static_cast<u64>(std::time(nullptr));
+			return;
+		  }
+
+		  case 0x18: // SYS_EXIT
+		  {
+			// arg is ADP_Stopped_ApplicationExit (0x20026) for normal exit,
+			// or a struct pointer for extended info — treat as halt either way
+			halted = true;
+			x[10] = 0;
+			return;
+		  }
+
+		  case 0x30: // SYS_EXIT_EXTENDED(reason, exit_code)
+		  {
+			halted = true;
+			x[10] = argv(1); // propagate exit code
+			return;
+		  }
+
+		  default:
+			throw std::runtime_error(
+			    std::format("Unsupported semihosting operation 0x{:x} at pc=0x{:x}",
+			    op, pc - 4));
+	    }
 	}
 
 	// ECALL (syscall) stubs
@@ -886,12 +1099,6 @@ private:
 			    std::format("ELF virtual address span [0x{:x}, 0x{:x}) requires {} bytes which exceeds max_program_size={}; "
 			    "construct the VM with a larger max_program_size",
 			    vaddr_min, vaddr_max, vaddr_max, max_size));
-
-		// Entry point sanity
-		if (ehdr.e_entry == 0)
-			throw std::invalid_argument(
-			    "ELF entry point is 0x0; the binary may not have been linked correctly "
-			    "(missing _start / crt0). Did you link with -nostdlib without providing an entry?");
 
 		if (ehdr.e_entry < vaddr_min || ehdr.e_entry >= vaddr_max)
 			throw std::invalid_argument(
