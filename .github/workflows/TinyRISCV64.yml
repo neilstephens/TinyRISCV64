@@ -61,3 +61,39 @@ jobs:
           else
             ./build_stress/stress Test/stress/sha512sum Test/stress/random.dat
           fi
+
+      - name: Run stress elf O1
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ./build_stress/Release/stress.exe Test/stress/sha512sumO1 Test/stress/random.dat
+          else
+            ./build_stress/stress Test/stress/sha512sumO1 Test/stress/random.dat
+          fi
+
+      - name: Run stress elf O2
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ./build_stress/Release/stress.exe Test/stress/sha512sumO2 Test/stress/random.dat
+          else
+            ./build_stress/stress Test/stress/sha512sumO2 Test/stress/random.dat
+          fi
+
+      - name: Run stress elf O3
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ./build_stress/Release/stress.exe Test/stress/sha512sumO3 Test/stress/random.dat
+          else
+            ./build_stress/stress Test/stress/sha512sumO3 Test/stress/random.dat
+          fi
+
+      - name: Run stress elf Os
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ./build_stress/Release/stress.exe Test/stress/sha512sumOs Test/stress/random.dat
+          else
+            ./build_stress/stress Test/stress/sha512sumOs Test/stress/random.dat
+          fi
