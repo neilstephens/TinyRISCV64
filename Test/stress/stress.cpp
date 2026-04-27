@@ -32,7 +32,7 @@
 #include <fstream>
 #include <sstream>
 
-#include "../../TinyRISCV64.h"
+#include "../../TinyElfRISCV64.h"
 
 extern "C"
 {
@@ -50,7 +50,7 @@ extern "C"
 }
 
 int run_raw(TinyRISCV64::VM& vm, const char* bin_file);
-int run_elf(TinyRISCV64::VM& vm, const char* data_file, TinyRISCV64::u64 entry_point);
+int run_elf(TinyRISCV64::ElfVM& vm, const char* data_file, TinyRISCV64::u64 entry_point);
 
 int main(int argc, char** argv)
 {
@@ -61,14 +61,14 @@ int main(int argc, char** argv)
 	}
 	const char* bin_file = argv[1];
 
-	// Create VM with a modest stack (4 KiB), with memory mapped to our buffer
-	TinyRISCV64::VM vm(4096*20);
+	// Create VM with a modest stack (4 KiB)
+	TinyRISCV64::ElfVM vm(4096);
 	bool bin_is_elf;
 	const char* data_file;
 	TinyRISCV64::u64 entry_point;
 	try
 	{
-		entry_point = vm.program_load(bin_file,/*isElf*/true);
+		entry_point = vm.program_load(bin_file);
 		bin_is_elf = true;
 		if (argc < 3)
 		{
@@ -86,7 +86,7 @@ int main(int argc, char** argv)
 	return bin_is_elf ? run_elf(vm,data_file,entry_point) : run_raw(vm,bin_file);
 }
 
-int run_elf(TinyRISCV64::VM& vm, const char* data_file, TinyRISCV64::u64 entry_point)
+int run_elf(TinyRISCV64::ElfVM& vm, const char* data_file, TinyRISCV64::u64 entry_point)
 {
 	try
 	{
@@ -158,7 +158,7 @@ int run_raw(TinyRISCV64::VM& vm, const char* bin_file)
 		//copy the buffer for comparison later
 		std::vector<uint8_t> native_buf(buf);
 
-		vm.program_load(bin_file);
+		vm.VM::program_load(bin_file);
 		auto data_addr_buf = vm.map_data_mem(buf.data(),buf.size());
 
 		//the program implements get_addrs(u8*,sz,u64*,u64*)
