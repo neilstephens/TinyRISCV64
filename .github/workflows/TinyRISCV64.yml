@@ -44,11 +44,20 @@ jobs:
         run: |
           cmake --build build_stress --config Release
 
-      - name: Run stress
+      - name: Run stress raw
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             ./build_stress/Release/stress.exe Test/stress/stress.rv64im
           else
             ./build_stress/stress Test/stress/stress.rv64im
+          fi
+
+      - name: Run stress elf
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ./build_stress/Release/stress.exe Test/stress/sha512sum Test/stress/random.dat
+          else
+            ./build_stress/stress Test/stress/sha512sum Test/stress/random.dat
           fi
