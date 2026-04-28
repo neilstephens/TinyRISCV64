@@ -495,20 +495,20 @@ protected:
 
 			case 0x10500073: // WFI  (wait for interrupt)
 				throw std::runtime_error(
-				    "WFI (wait-for-interrupt) is not supported in this VM; "
-				    "remove interrupt-driven idle loops from bare-metal code");
+					"WFI (wait-for-interrupt) is not supported in this VM; "
+					"remove interrupt-driven idle loops from bare-metal code");
 
 			case 0x30200073: // MRET
 			case 0x10200073: // SRET
 			case 0x00200073: // URET
 				throw std::runtime_error(
-				    std::format("Privilege-mode return instruction (MRET/SRET/URET, inst=0x{:x}) at pc=0x{:x}: this VM has no privilege levels",
-				    inst, pc - 4));
+					std::format("Privilege-mode return instruction (MRET/SRET/URET, inst=0x{:x}) at pc=0x{:x}: this VM has no privilege levels",
+						inst, pc - 4));
 
 			default:
 				throw std::invalid_argument(
-				    std::format("Unknown SYSTEM instruction 0x{:x} at pc=0x{:x}",
-				    inst, pc - 4));
+					std::format("Unknown SYSTEM instruction 0x{:x} at pc=0x{:x}",
+						inst, pc - 4));
 		}
 	}
 
@@ -523,17 +523,17 @@ protected:
 	virtual void handle_semihost()
 	{
 		throw std::runtime_error(
-		    std::format("Semihosting call at pc=0x{:x} is not supported in this VM; "
-		    "implement handle_semihost() to support semihosting operations",
-		    pc - 4));
+			std::format("Semihosting call at pc=0x{:x} is not supported in this VM; "
+				"implement handle_semihost() to support semihosting operations",
+				pc - 4));
 	}
 
 	virtual void handle_ecall()
 	{
 		throw std::runtime_error(
-		    std::format("ECALL at pc=0x{:x} is not supported in this VM; "
-		    "implement handle_ecall() to support system calls",
-		    pc - 4));
+			std::format("ECALL at pc=0x{:x} is not supported in this VM; "
+				"implement handle_ecall() to support system calls",
+				pc - 4));
 	}
 
 	// For 128-bit multiplication - TODO: use platform intrinsics (_umul128 on MSVC and __int128 specifically for GCC/Clang)
