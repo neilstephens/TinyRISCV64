@@ -174,7 +174,7 @@ public:
 		}
 	}
 
-	void reset()
+	virtual void reset()
 	{
 		for(auto& xn : x) xn=0;
 		//x1 - return address (ra)

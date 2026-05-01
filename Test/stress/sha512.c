@@ -263,20 +263,26 @@ void sha512_bytes(const void *src, size_t n_bytes, void *dst_bytes32) {
 
 int main(int argc, char** argv)
 {
+	printf("Reading data from file descriptor (FD) %d,"
+		 "writing hash to FD %d, errors on FD %d.\n", IN_FD, OUT_FD, ERR_FD);
 	struct sha512 sha;
 	sha512_init(&sha);
-	int n; char buf[1024];
+	int n; char buf[1024]; int tot = 0;
 	do
 	{
 		n = read(IN_FD,buf,1024);
 		if(n > 0)
+		{
 			sha512_append(&sha, buf, n);
+			tot += n;
+		}
 		else if(n < 0)
-			write(ERR_FD,"Read Error",10);
+			printf("Read Error: %d\n",n);
 	} while (n>0);
 	char sha_hex[SHA512_HEX_SIZE];
 	sha512_finalize_hex(&sha, sha_hex);
 	write(OUT_FD,sha_hex,SHA512_HEX_SIZE-1);
+	printf("Total bytes hashed: %d\n",tot);
 	return n;
 }
 

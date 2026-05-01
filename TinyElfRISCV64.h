@@ -52,6 +52,10 @@ private:
 	// File-descriptor to iostream mapping (populated via map_fd)
 	std::unordered_map<u64, std::shared_ptr<std::iostream>> fd_streams;
 
+	// PT_TLS segment base (p_vaddr), or 0 if the ELF has no TLS segment.
+	// Kept as a member so reset() can restore tp without re-loading the ELF.
+	u64 tls_tp = 0;
+
 public:
 	ElfVM(const size_t stack_size = 4096, const size_t max_program_size = 1024UL*1024)
 		: VM(stack_size,max_program_size) {}
@@ -60,10 +64,24 @@ public:
 	//   resets state and invalidates previous virtual addrs
 	u64 program_load(const std::string& prog_filename) override
 	{
-		auto [prog, entry] = load_elf(prog_filename, max_prog_size);
+		auto [prog, entry, tp] = load_elf(prog_filename, max_prog_size);
+		tls_tp = tp;
 		program = std::move(prog);
 		reset();
 		return entry;
+	}
+
+	// Reset all CPU state; re-apply tp so TLS works after every reset.
+	void reset() override
+	{
+		VM::reset();
+		// Point the thread pointer (tp/x4) at the TLS block so that local-exec
+		// %tprel accesses (e.g. errno) resolve correctly:
+		//   tp + (symbol_vaddr - pt_tls.p_vaddr)  →  symbol_vaddr  ✓
+		// The .tdata bytes are already mapped at tls_tp by the PT_LOAD segment;
+		// .tbss falls in the zero-initialised BSS tail — nothing extra to copy.
+		if (tls_tp)
+			x[4] = tls_tp;
 	}
 
 	// Map a host iostream to a guest file descriptor number.
@@ -410,7 +428,7 @@ private:
 		}
 	}
 
-	static std::pair<std::vector<u8>, u64> load_elf(const std::string& filename, const size_t max_size)
+	static std::tuple<std::vector<u8>, u64, u64> load_elf(const std::string& filename, const size_t max_size)
 	{
 		// ----- read entire file ------------------------------------------------
 		std::ifstream fin(filename, std::ios::binary | std::ios::ate);
@@ -512,6 +530,7 @@ private:
 		bool has_dynamic = false;
 		u64 vaddr_min   = ~u64(0);
 		u64 vaddr_max   = 0;
+		u64 tls_tp      = 0; // PT_TLS p_vaddr — base for tp-relative TLS accesses
 
 		for (u16 i = 0; i < ehdr.e_phnum; ++i)
 		{
@@ -524,6 +543,13 @@ private:
 			{
 				case 3: /*PT_INTERP*/ has_interp  = true; break;
 				case 2: /*PT_DYNAMIC*/ has_dynamic = true; break;
+				case 7: /*PT_TLS*/
+					// Record the TLS segment base so program_load can initialise
+					// the thread pointer (tp/x4).  The initialised .tdata bytes
+					// are already mapped by PT_LOAD at this vaddr; .tbss falls
+					// in the zero-initialised BSS tail — nothing extra to do here.
+					tls_tp = phdr.p_vaddr;
+					break;
 				case 1: /*PT_LOAD*/
 				{
 					if (phdr.p_filesz > phdr.p_memsz)
@@ -591,7 +617,7 @@ private:
 				phdr.p_filesz);
 		}
 
-		return {std::move(prog), ehdr.e_entry};
+		return {std::move(prog), ehdr.e_entry, tls_tp};
 	}
 
 	struct Elf64Ehdr

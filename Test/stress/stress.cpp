@@ -44,7 +44,7 @@ extern "C"
 
 #define NO_SHA512SUM_MAIN
 //This was compiled and linked into a static elf executable for the vm
-//	riscv64-unknown-elf-gcc -march=rv64im -mabi=lp64 -nostartfiles -static -T vm.ld sha512.c -lsemihost -o sha512sum
+//	riscv64-unknown-elf-gcc --oslib=semihost -march=rv64im -mabi=lp64 -nostartfiles -static -T vm.ld sha512.c -o sha512sum
 #include "sha512.c"
 #undef NO_SHA512SUM_MAIN
 }
