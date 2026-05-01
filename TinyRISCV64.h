@@ -169,7 +169,7 @@ public:
 
 			execute_instruction();
 
-			if(pc == program.size())
+			if(pc == ((program.size() + 3) & ~3ull))
 				halted = true;
 		}
 	}
@@ -178,7 +178,7 @@ public:
 	{
 		for(auto& xn : x) xn=0;
 		//x1 - return address (ra)
-		x[1] = program.size();
+		x[1] = (program.size() + 3) & ~3ull;
 		//x2 - stack pointer (sp)
 		x[2] = program.size()+64+data.size()+64+stack.size();
 		//x8 - frame pointer (s0 / fp)
