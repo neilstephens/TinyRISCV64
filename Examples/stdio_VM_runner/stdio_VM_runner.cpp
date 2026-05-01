@@ -54,11 +54,11 @@ int main(int argc, char** argv)
 		//beware, this could block on reading stdin - if that's what the guest program does
 		//  put it on another thread if that's not OK
 		VM.execute_program(entry_point,100*1024UL*1024);
+		return VM.register_get(10);
 	}
 	catch(const std::exception &e)
 	{
 		std::fprintf(stderr, "VM Exception: %s\n", e.what());
 		return 1;
 	}
-	return 0;
 }
