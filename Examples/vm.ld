@@ -4,14 +4,22 @@ SECTIONS
 {
     . = 0x0;
 
-    .text   : { *(.text.init) *(.text*) }
-    .rodata : { *(.rodata*) }
-    .data   : { *(.data*) }
-    .bss    : { *(.bss*) *(COMMON) }
+    .text   : { *(.text.init) *(.text*) }  /* Code                */
+    .rodata : { *(.rodata*) }              /* Read-only data      */
+    .data   : { *(.data*) }                /* Pre-nitialised data */
+    .bss    : { *(.bss*) *(COMMON) }       /* Zeroed data         */
 
     . = ALIGN(8);
-    _end = .;
+    
+    /* Zero the heap size and malloc will return NULL */
+    /* Comment this whole block and malloc won't compile */
+    .heap (NOLOAD) : {
+        __heap_start = .;
+        . += 0x10000;         /* 64KB heap */
+        __heap_end = .;
+    }
 
+    /* We would have to resurect eh_frame if we wanted to use C++ */
     /DISCARD/ : { *(.comment) *(.eh_frame*) *(.riscv.attributes) }
 }
 
