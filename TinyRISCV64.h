@@ -43,6 +43,7 @@
 #include <cstring>
 #include <array>
 #include <format>
+#include <atomic>
 
 namespace TinyRISCV64
 {
@@ -59,13 +60,13 @@ using i64 = int64_t;
 class VM
 {
 protected:
-	u64 pc;                    // Program counter
-	std::vector<u8> program;   // Program memory
-	std::array<u64,32> x{};    // Registers x0-x31
-	std::vector<u8> stack;     // Stack memory
-	std::span<u8> data;        // Data memory
-	bool halted{false};        // Program exited
-	const size_t max_prog_size;// Maximum allowed program image size (bytes)
+	u64 pc;                         // Program counter
+	std::vector<u8> program;        // Program memory
+	std::array<u64,32> x{};         // Registers x0-x31
+	std::vector<u8> stack;          // Stack memory
+	std::span<u8> data;             // Data memory
+	std::atomic_bool halted{false}; // Program exited or externally halted
+	const size_t max_prog_size;     // Maximum allowed program image size (bytes)
 
 	// Virtual addressing:
 	static constexpr
@@ -172,6 +173,14 @@ public:
 			if(pc == ((program.size() + 3) & ~3ull))
 				halted = true;
 		}
+	}
+
+	// Halt the program (if it's running)
+	//   This is the only thread safe call - everything else should be called synchronously
+	bool halt_program()
+	{
+		auto alreadyHalted = halted.exchange(true);
+		return !alreadyHalted;
 	}
 
 	virtual void reset()
