@@ -250,39 +250,33 @@ void sha512_bytes(const void *src, size_t n_bytes, void *dst_bytes32) {
 }
 
 //End: Code taken from https://gist.github.com/shibatch/238c618a027f67935926df9d1149a677
-//==================================================================================
+//======================================================================================
 
 #ifndef NO_SHA512SUM_MAIN
 
 #include <unistd.h>
 #include <stdio.h>
 
-#define IN_FD 41
-#define OUT_FD 42
-#define ERR_FD 43
-
 int main(int argc, char** argv)
 {
-	printf("Reading data from file descriptor (FD) %d,"
-		 "writing hash to FD %d, errors on FD %d.\n", IN_FD, OUT_FD, ERR_FD);
 	struct sha512 sha;
 	sha512_init(&sha);
 	int n; char buf[1024]; int tot = 0;
 	do
 	{
-		n = read(IN_FD,buf,1024);
+		n = read(STDIN_FILENO,buf,1024);
 		if(n > 0)
 		{
 			sha512_append(&sha, buf, n);
 			tot += n;
 		}
 		else if(n < 0)
-			printf("Read Error: %d\n",n);
+			fprintf(stderr,"Read Error: %d\n",n);
 	} while (n>0);
 	char sha_hex[SHA512_HEX_SIZE];
 	sha512_finalize_hex(&sha, sha_hex);
-	write(OUT_FD,sha_hex,SHA512_HEX_SIZE-1);
-	printf("Total bytes hashed: %d\n",tot);
+	printf("%s\n",sha_hex);
+	fprintf(stderr,"Total bytes hashed: %d\n",tot);
 	return n;
 }
 

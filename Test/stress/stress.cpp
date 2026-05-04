@@ -44,7 +44,7 @@ extern "C"
 
 #define NO_SHA512SUM_MAIN
 //This was compiled and linked into a static elf executable for the vm
-//	riscv64-unknown-elf-gcc --oslib=semihost -march=rv64im -mabi=lp64 -nostartfiles -static -T vm.ld sha512.c -o sha512sum
+//	riscv64-unknown-elf-gcc -L. --oslib=TinyElfSysCall -march=rv64im -mabi=lp64 -nostartfiles -static -T vm.ld sha512.c -o sha512sum
 #include "sha512.c"
 #undef NO_SHA512SUM_MAIN
 }
@@ -94,15 +94,15 @@ int run_elf(TinyRISCV64::ElfVM& vm, const char* data_file, TinyRISCV64::u64 entr
 		auto pDataStream = std::make_shared<std::fstream>(data_file,std::ios::in | std::ios::binary);
 		if (!pDataStream || pDataStream->fail())
 			throw std::invalid_argument("Failed to open data file: " + std::string(data_file));
-		vm.map_fd(41,pDataStream);
+		vm.map_fd(STDIN_FILENO,pDataStream);
 
 		//map output fd
 		auto pOutStream = std::make_shared<std::stringstream>();
-		vm.map_fd(42,pOutStream);
+		vm.map_fd(STDOUT_FILENO,pOutStream);
 
 		//map error fd
 		auto pErrStream = std::make_shared<std::stringstream>();
-		vm.map_fd(43,pErrStream);
+		vm.map_fd(STDERR_FILENO,pErrStream);
 
 		vm.execute_program(entry_point,100UL*1024*1024); //100 million instructions max
 		const std::string vm_output = pOutStream->str();
