@@ -61,6 +61,7 @@ class VM
 {
 protected:
 	u64 pc;                         // Program counter
+	u32 inst;                       // Current instruction
 	std::vector<u8> program;        // Program memory
 	std::array<u64,32> x{};         // Registers x0-x31
 	std::vector<u8> stack;          // Stack memory
@@ -154,23 +155,26 @@ public:
 	// Execute program
 	void execute_program(const u64 entry_point = p_beg, const size_t max_instructions = 100000)
 	{
+		const auto prog_sz = program.size();
+		const auto sentinel_pc = ((prog_sz + 3) & ~3ull);
+
 		pc = entry_point;
 		halted = false;
 		size_t count = 0;
 
-		if(program.size() < 4)
+		if(prog_sz < 4)
 			throw std::runtime_error("Program too small (must be at least 4 bytes)");
 
 		while (!halted)
 		{
-			if (pc > program.size()-4)
+			if (pc > prog_sz-4) [[unlikely]]
 				throw std::runtime_error("PC jumped program region");
-			if (++count > max_instructions)
+			if (++count > max_instructions) [[unlikely]]
 				throw std::runtime_error("Maximum instruction count exceeded");
 
 			execute_instruction();
 
-			if(pc == ((program.size() + 3) & ~3ull))
+			if(pc == sentinel_pc) [[unlikely]]
 				halted = true;
 		}
 	}
@@ -221,60 +225,64 @@ protected:
 		return prog;
 	}
 
-	void execute_instruction()
+	// Instruction Decoding
+	inline u8 opcode() const { return inst & 0x7f; }
+	inline u8 funct3() const { return (inst >> 12) & 0x7; }
+	inline u8 funct7() const { return (inst >> 25) & 0x7f; }
+	inline u8 rd() const { return (inst >> 7) & 0x1f; }
+	inline u8 rs1() const { return (inst >> 15) & 0x1f; }
+	inline u8 rs2() const { return (inst >> 20) & 0x1f; }
+	inline i64 imm_i() const { return static_cast<i64>(static_cast<i32>(inst) >> 20); }
+	inline i64 imm_s() const { return (imm_i() & ~0x1fLL) | rd(); }
+	inline i64 imm_b() const {
+	    return (static_cast<i64>(static_cast<i32>(inst & 0x80000000)) >> 19) |
+		     ((inst & 0x80) << 4) | ((inst >> 20) & 0x7e0) | ((inst >> 7) & 0x1e);
+	}
+	inline i64 imm_j() const {
+	    return (static_cast<i64>(static_cast<i32>(inst & 0x80000000)) >> 11) |
+		     (inst & 0xff000) | ((inst >> 9) & 0x800) | ((inst >> 20) & 0x7fe);
+	}
+	inline u64 imm_u() const { return static_cast<u64>(static_cast<i64>(static_cast<i32>(inst & 0xfffff000))); }
+
+
+	inline void execute_instruction()
 	{
-		u32 inst; memcpy(&inst,&program[pc],4);
+		memcpy(&inst,&program[pc],4);
 		pc += 4;
-
-		// Decode
-		const u8 opcode = inst & 0x7f;
-		const u8 funct3 = (inst >> 12) & 0x7;
-		const u8 funct7 = (inst >> 25) & 0x7f;
-		const u8 rd = (inst >> 7) & 0x1f;
-		const u8 rs1 = (inst >> 15) & 0x1f;
-		const u8 rs2 = (inst >> 20) & 0x1f;
-
-		const i64 imm_i = static_cast<i64>(static_cast<i32>(inst) >> 20);
-		const i64 imm_s = (imm_i & ~0x1fLL) | rd;
-		const i64 imm_b = ((static_cast<i64>(static_cast<i32>(inst & 0x80000000)) >> 19) |
-					 ((inst & 0x80) << 4) | ((inst >> 20) & 0x7e0) | ((inst >> 7) & 0x1e));
-		const i64 imm_j = ((static_cast<i64>(static_cast<i32>(inst & 0x80000000)) >> 11) |
-					 (inst & 0xff000) | ((inst >> 9) & 0x800) | ((inst >> 20) & 0x7fe));
-		const u64 imm_u = static_cast<u64>(static_cast<i64>(static_cast<i32>(inst & 0xfffff000)));
 
 		// Execute
 		x[0] = 0; // Ensure x0 stays zero
 
-		switch(opcode)
+		switch(opcode())
 		{
-			case 0x37: x[rd] = imm_u; break;               // LUI
-			case 0x17: x[rd] = (pc - 4) + imm_u; break;    // AUIPC
-			case 0x6f: x[rd] = pc; pc += imm_j - 4; break; // JAL
-			case 0x67:                                     // JALR
+			case 0x37: x[rd()] = imm_u(); break;               // LUI
+			case 0x17: x[rd()] = (pc - 4) + imm_u(); break;    // AUIPC
+			case 0x6f: x[rd()] = pc; pc += imm_j() - 4; break; // JAL
+			case 0x67:                                         // JALR
 			{
-				const u64 target = (x[rs1] + imm_i) & ~1ULL;
-				x[rd] = pc;
+				const u64 target = (x[rs1()] + imm_i()) & ~1ULL;
+				x[rd()] = pc;
 				pc = target;
 				break;
 			}
-			case 0x63: exec_branch(funct3, rs1, rs2, imm_b); break;                  // Branch
-			case 0x03: exec_load(funct3, rd, rs1, imm_i); break;                     // Load
-			case 0x23: exec_store(funct3, rs1, rs2, imm_s); break;                   // Store
-			case 0x13: exec_alu_imm(funct3, rd, rs1, imm_i); break;                  // ALU immediate
-			case 0x1b: exec_alu_imm32(funct3, rd, rs1, imm_i); break;                // ALU immediate 32-bit
-			case 0x33: exec_alu_reg(funct3, funct7, rd, rs1, rs2); break;            // ALU register
-			case 0x3b: exec_alu_reg32(funct3, funct7, rd, rs1, rs2); break;          // ALU register 32-bit
-			case 0x0f: break;                                                        // FENCE (nop)
-			case 0x73: exec_system(inst, funct3, funct7, rd, rs1, rs2, imm_i); break;// SYSTEM
-			default: throw std::invalid_argument("Unknown opcode");
+			case 0x63: exec_branch(funct3(), rs1(), rs2(), imm_b()); break;           // Branch
+			case 0x03: exec_load(funct3(), rd(), rs1(), imm_i()); break;              // Load
+			case 0x23: exec_store(funct3(), rs1(), rs2(), imm_s()); break;            // Store
+			case 0x13: exec_alu_imm(funct3(), rd(), rs1(), imm_i()); break;           // ALU immediate
+			case 0x1b: exec_alu_imm32(funct3(), rd(), rs1(), imm_i()); break;         // ALU immediate 32-bit
+			case 0x33: exec_alu_reg(funct3(), funct7(), rd(), rs1(), rs2()); break;   // ALU register
+			case 0x3b: exec_alu_reg32(funct3(), funct7(), rd(), rs1(), rs2()); break; // ALU register 32-bit
+			case 0x0f: break;                                                         // FENCE (nop)
+			case 0x73: exec_system(funct3(), rd()); break;                            // SYSTEM
+			default: [[unlikely]] throw std::invalid_argument("Unknown opcode");
 		}
 	}
 
 	// Memory access helpers
 	template<typename T>
-	u8* mem_ptr(u64 addr)
+	inline u8* mem_ptr(u64 addr)
 	{
-		if (addr > 0xFFFFFFFFFFFFFFF0ULL) //guard against wrap-around
+		if (addr > 0xFFFFFFFFFFFFFFF0ULL) [[unlikely]] //guard against wrap-around
 			throw std::runtime_error("Memory access out of bounds");
 
 		const u64 addr_max = addr + sizeof(T) - 1;
@@ -286,11 +294,11 @@ protected:
 		if(addr >= s_beg && addr_max < s_end)
 			return stack.data() + addr - s_beg;
 
-		throw std::runtime_error("Memory access out of bounds");
+		[[unlikely]] throw std::runtime_error("Memory access out of bounds");
 	}
 
 	template<typename T>
-	T mem_load(u64 addr)
+	inline T mem_load(u64 addr)
 	{
 		T value;
 		memcpy(&value, mem_ptr<T>(addr), sizeof(T));
@@ -298,7 +306,7 @@ protected:
 	}
 
 	template<typename T>
-	void mem_store(u64 addr, T value)
+	inline void mem_store(u64 addr, T value)
 	{
 		memcpy(mem_ptr<T>(addr), &value, sizeof(T));
 	}
@@ -472,11 +480,11 @@ protected:
 	}
 
 	// SYSTEM instruction dispatch (opcode 0x73)
-	void exec_system(u32 inst, u8 funct3, u8 funct7, u8 rd, u8 rs1, u8 rs2, i32 imm)
+	inline void exec_system(u8 funct3, u8 rd)
 	{
 		if (funct3 != 0)
 		{
-			handle_csr(inst,funct3,funct7,rd,rs1,rs2,imm);
+			handle_csr();
 			return;
 		}
 
@@ -522,11 +530,12 @@ protected:
 	}
 
 	// CSR instructions (CSRRW, CSRRS, CSRRC, CSRRWI, CSRRSI, CSRRCI)
-	virtual void handle_csr(u32 inst, u8 funct3, u8 funct7, u8 rd, u8 rs1, u8 rs2, i32 imm)
+	virtual void handle_csr()
 	{
+		const auto d = rd();
 		// Stub: All CSRs read as 0; write side-effects are ignored
-		if (rd != 0)
-			x[rd] = 0;
+		if (d != 0)
+			x[d] = 0;
 	}
 
 	virtual void handle_semihost()
