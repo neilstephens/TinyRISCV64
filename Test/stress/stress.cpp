@@ -88,21 +88,22 @@ int main(int argc, char** argv)
 
 int run_elf(TinyRISCV64::ElfVM& vm, const char* data_file, TinyRISCV64::u64 entry_point)
 {
+	const TinyRISCV64::u64 stdin_fd = 0, stdout_fd = 1, stderr_fd = 2;
 	try
 	{
 		//map input fd
 		auto pDataStream = std::make_shared<std::fstream>(data_file,std::ios::in | std::ios::binary);
 		if (!pDataStream || pDataStream->fail())
 			throw std::invalid_argument("Failed to open data file: " + std::string(data_file));
-		vm.map_fd(STDIN_FILENO,pDataStream);
+		vm.map_fd(stdin_fd,pDataStream);
 
 		//map output fd
 		auto pOutStream = std::make_shared<std::stringstream>();
-		vm.map_fd(STDOUT_FILENO,pOutStream);
+		vm.map_fd(stdout_fd,pOutStream);
 
 		//map error fd
 		auto pErrStream = std::make_shared<std::stringstream>();
-		vm.map_fd(STDERR_FILENO,pErrStream);
+		vm.map_fd(stderr_fd,pErrStream);
 
 		vm.execute_program(entry_point,100UL*1024*1024); //100 million instructions max
 		std::string vm_output;
