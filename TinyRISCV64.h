@@ -482,7 +482,7 @@ protected:
 	// SYSTEM instruction dispatch (opcode 0x73)
 	inline void exec_system(u8 funct3, u8 rd)
 	{
-		if (funct3 != 0)
+		if (funct3 != 0) [[unlikely]]
 		{
 			handle_csr();
 			return;
@@ -490,11 +490,11 @@ protected:
 
 		switch (inst)
 		{
-			case 0x00000073: // ECALL
+			case 0x00000073: [[likely]] // ECALL
 				handle_ecall();
 				return;
 
-			case 0x00100073: // EBREAK
+			case 0x00100073: [[likely]] // EBREAK
 			{
 				// Check for the semihosting magic bracket:
 				//   slli zero,zero,0x1f  (0x01f01013)  <-- instruction before ebreak
@@ -522,7 +522,7 @@ protected:
 					std::format("Privilege-mode return instruction (MRET/SRET/URET, inst=0x{:x}) at pc=0x{:x}: this VM has no privilege levels",
 						inst, pc - 4));
 
-			default:
+			default: [[unlikely]]
 				throw std::invalid_argument(
 					std::format("Unknown SYSTEM instruction 0x{:x} at pc=0x{:x}",
 						inst, pc - 4));
