@@ -105,7 +105,8 @@ int run_elf(TinyRISCV64::ElfVM& vm, const char* data_file, TinyRISCV64::u64 entr
 		vm.map_fd(STDERR_FILENO,pErrStream);
 
 		vm.execute_program(entry_point,100UL*1024*1024); //100 million instructions max
-		const std::string vm_output = pOutStream->str();
+		std::string vm_output;
+		*pOutStream >> vm_output;
 
 		#if defined(WIN32) || defined(_WIN32) || defined(__WIN32)
 		pDataStream->close();
